@@ -1,0 +1,38 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# ── Entorno virtual ───────────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env/
+
+# ── Base de datos local (contiene datos personales) ───────────────────────────
+*.db
+*.sqlite3
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+# secrets.toml puede contener API keys — nunca subir
+.streamlit/secrets.toml
+
+# ── Variables de entorno ──────────────────────────────────────────────────────
+.env
+.env.local
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs y temporales ─────────────────────────────────────────────────────────
+*.log
+*.tmp

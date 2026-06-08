@@ -1,0 +1,44 @@
+# ============================================================
+# finanzas_app — requirements.txt
+# Última actualización: 2026-05
+# ============================================================
+
+# --- Framework principal ---
+streamlit>=1.35.0
+
+# --- Base de datos ---
+# SQLite viene incluido en Python stdlib; no requiere paquete extra
+
+# --- Datos de mercado ---
+yfinance>=0.2.40
+
+# --- Procesamiento de datos ---
+pandas>=2.2.0
+numpy>=1.26.0
+
+# --- Visualizaciones ---
+plotly>=5.22.0
+
+# --- Parseo de PDFs (estados de cuenta bancarios) ---
+pdfplumber>=0.11.0
+
+# --- Lectura de emails (alertas bancarias) ---
+# imaplib y email vienen en Python stdlib; no requieren paquete extra
+
+# --- Parseo de XML (Activity Statement IBKR) ---
+# xml.etree.ElementTree viene en Python stdlib
+
+# --- Cálculos financieros avanzados ---
+scipy>=1.13.0          # Para métricas estadísticas (Sharpe, etc.)
+
+# --- Utilidades de fechas ---
+python-dateutil>=2.9.0
+
+# --- Manejo de variables de entorno (credenciales email) ---
+python-dotenv>=1.0.0
+
+# --- Exportación a Excel (reportes opcionales) ---
+openpyxl>=3.1.0
+
+# --- HTTP (fallback si yfinance lo necesita) ---
+requests>=2.32.0
