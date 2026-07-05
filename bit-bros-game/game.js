@@ -19,12 +19,27 @@ const STOMP_TOLERANCE = 14;
 const INVULN_TIME = 1500;
 const LEVEL_TIME = 400;
 
+const JUMP_BUFFER_MS = 140;   // a jump press is remembered briefly so a tap never gets lost to frame timing
+const COYOTE_MS = 90;         // short grace window to jump after walking off a ledge
+const SHOOT_COOLDOWN_MS = 400;
+const FIREBALL_SPEED = 6.5;
+const FIREBALL_GRAVITY = 0.5;
+const FIREBALL_LIFESPAN_MS = 2500;
+const MUSHROOM_SCORE = 1000;
+const FLOWER_SCORE = 1000;
+
+const SIZES = {
+  small: { w: 22, h: 30 },
+  big: { w: 24, h: 40 },
+  fire: { w: 24, h: 40 },
+};
+
 // ---------------------------------------------------------------
 // Level builder: programmatic spec -> tile grid + entity lists
 // ---------------------------------------------------------------
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], coins = [],
-          goombas = [], flag, spawn, name } = spec;
+          goombas = [], mushrooms = [], flowers = [], flag, spawn, name } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -49,6 +64,12 @@ function buildLevel(spec) {
       w: 26, h: 24,
       minX: g.range[0] * TILE, maxX: g.range[1] * TILE,
       vx: 1.2, alive: true, squash: 0,
+    })),
+    mushrooms: mushrooms.map(([x, row]) => ({
+      x: x * TILE, y: row * TILE - 22, w: 24, h: 22, taken: false,
+    })),
+    flowers: flowers.map(([x, row]) => ({
+      x: x * TILE, y: row * TILE - 24, w: 22, h: 24, taken: false,
     })),
     flag: { x: flag.x * TILE + TILE / 2, y: (groundY) * TILE, topY: flag.y * TILE },
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },
@@ -84,6 +105,8 @@ const LEVEL_SPECS = [
       { x: 46, y: 13, range: [43, 51] },
       { x: 58, y: 13, range: [55, 66] },
     ],
+    mushrooms: [[6, 13]],
+    flowers: [[32, 8]],
     flag: { x: 66, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -117,6 +140,8 @@ const LEVEL_SPECS = [
       { x: 76, y: 9, range: [75, 79] },
       { x: 80, y: 13, range: [73, 84] },
     ],
+    mushrooms: [[3, 13]],
+    flowers: [[21, 7]],
     flag: { x: 82, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -150,6 +175,8 @@ const LEVEL_SPECS = [
       { x: 93, y: 9, range: [92, 97] },
       { x: 96, y: 13, range: [91, 99] },
     ],
+    mushrooms: [[3, 13]],
+    flowers: [[31, 6]],
     flag: { x: 97, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -158,13 +185,23 @@ const LEVEL_SPECS = [
 // ---------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------
-const keys = { left: false, right: false, jump: false, jumpJustPressed: false };
-let jumpHeldPrev = false;
+const keys = { left: false, right: false, jump: false, shoot: false };
+
+// Jump/shoot presses are buffered by timestamp (not sampled per-frame), so a
+// quick tap always registers even if it happens to fall between two frames.
+let jumpBufferUntil = 0;
+let shootBufferUntil = 0;
+let coyoteUntil = 0;
+let lastShotAt = -Infinity;
+
+function requestJump() { jumpBufferUntil = performance.now() + JUMP_BUFFER_MS; }
+function requestShoot() { shootBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 
 window.addEventListener('keydown', e => {
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = true;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = true;
-  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = true;
+  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { keys.jump = true; requestJump(); }
+  if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
   if (e.code === 'KeyR') restartGame();
   if (['Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
 });
@@ -172,22 +209,25 @@ window.addEventListener('keyup', e => {
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = false;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = false;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
+  if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
 });
 
-function bindTouch(id, onDown, onUp) {
+// Pointer Events unify touch/mouse/pen with a single listener set and, via
+// setPointerCapture, keep tracking the press even if the finger slides off
+// the button — this is what was causing left/right/jump to randomly "not work".
+function bindButton(id, onDown, onUp) {
   const el = document.getElementById(id);
-  const start = e => { e.preventDefault(); onDown(); };
-  const end = e => { e.preventDefault(); onUp(); };
-  el.addEventListener('touchstart', start, { passive: false });
-  el.addEventListener('touchend', end, { passive: false });
-  el.addEventListener('touchcancel', end, { passive: false });
-  el.addEventListener('mousedown', start);
-  el.addEventListener('mouseup', end);
-  el.addEventListener('mouseleave', end);
+  const down = e => { e.preventDefault(); el.setPointerCapture?.(e.pointerId); onDown(); };
+  const up = e => { e.preventDefault(); onUp(); };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
 }
-bindTouch('btn-left', () => keys.left = true, () => keys.left = false);
-bindTouch('btn-right', () => keys.right = true, () => keys.right = false);
-bindTouch('btn-jump', () => keys.jump = true, () => keys.jump = false);
+bindButton('btn-left', () => keys.left = true, () => keys.left = false);
+bindButton('btn-right', () => keys.right = true, () => keys.right = false);
+bindButton('btn-jump', () => { keys.jump = true; requestJump(); }, () => keys.jump = false);
+bindButton('btn-shoot', () => { keys.shoot = true; requestShoot(); }, () => keys.shoot = false);
 
 // ---------------------------------------------------------------
 // Game state
@@ -220,26 +260,86 @@ let timeAccum = 0;
 let invulnUntil = 0;
 let stateTimer = 0;
 let frameTime = 0;
+let currentPowerState = 'small'; // small | big | fire — carries over between levels, resets on death
+let fireballs = [];
 
-function newPlayer(spawn) {
+function newPlayer(spawn, powerState = 'small') {
+  const size = SIZES[powerState];
   return {
-    x: spawn.x, y: spawn.y, w: 22, h: 30,
+    x: spawn.x, y: spawn.y, w: size.w, h: size.h,
     vx: 0, vy: 0, onGround: false, facing: 1, dead: false,
+    powerState,
   };
+}
+
+function setPowerState(newState) {
+  if (player.powerState === newState) return;
+  const oldH = player.h;
+  const size = SIZES[newState];
+  player.w = size.w;
+  player.h = size.h;
+  player.y += oldH - size.h; // keep feet planted when growing/shrinking
+  player.powerState = newState;
+  currentPowerState = newState;
+}
+
+function spawnFireball() {
+  fireballs.push({
+    x: player.facing > 0 ? player.x + player.w : player.x - 10,
+    y: player.y + player.h * 0.55,
+    vx: FIREBALL_SPEED * player.facing,
+    vy: 2,
+    r: 7,
+    bornAt: performance.now(),
+    alive: true,
+  });
+}
+
+function updateFireballs(dt) {
+  for (const fb of fireballs) {
+    if (!fb.alive) continue;
+    fb.vy += FIREBALL_GRAVITY * dt;
+    fb.x += fb.vx * dt;
+    fb.y += fb.vy * dt;
+
+    if (performance.now() - fb.bornAt > FIREBALL_LIFESPAN_MS) { fb.alive = false; continue; }
+    if (fb.y > level.pixelHeight + 60) { fb.alive = false; continue; }
+
+    if (fb.vy > 0 && isSolidTile(Math.floor(fb.x / TILE), Math.floor((fb.y + fb.r) / TILE))) {
+      fb.y = Math.floor((fb.y + fb.r) / TILE) * TILE - fb.r;
+      fb.vy = -Math.abs(fb.vy) * 0.7 - 3;
+    }
+    const leadTx = Math.floor((fb.x + (fb.vx > 0 ? fb.r : -fb.r)) / TILE);
+    if (isSolidTile(leadTx, Math.floor(fb.y / TILE))) { fb.alive = false; continue; }
+
+    for (const g of level.goombas) {
+      if (!g.alive) continue;
+      if (fb.x + fb.r > g.x && fb.x - fb.r < g.x + g.w && fb.y + fb.r > g.y && fb.y - fb.r < g.y + g.h) {
+        g.alive = false;
+        fb.alive = false;
+        score += 100;
+        hud.score.textContent = score;
+        break;
+      }
+    }
+  }
+  fireballs = fireballs.filter(fb => fb.alive);
 }
 
 function loadLevel(idx) {
   levelIndex = idx;
   level = buildLevel(LEVEL_SPECS[idx]);
-  player = newPlayer(level.spawn);
+  player = newPlayer(level.spawn, currentPowerState);
   camera.x = 0;
   timeLeft = LEVEL_TIME;
   timeAccum = 0;
+  fireballs = [];
   hud.level.textContent = level.name;
 }
 
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
+  currentPowerState = 'small';
   loadLevel(0);
   state = 'playing';
   overlay.classList.add('hidden');
@@ -262,6 +362,10 @@ function isSolidTile(tx, ty) {
   if (ty >= level.height) return false; // below the map: open pit, falling here should kill the player
   if (tx < 0 || tx >= level.width) return true; // treat OOB sides as solid walls
   return level.solid[ty][tx];
+}
+
+function aabbOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 function rectTiles(x, y, w, h) {
@@ -310,9 +414,20 @@ function killPlayer() {
     showOverlay('GAME OVER', `Puntaje final: ${score}. Presioná R o el botón para reintentar.`, 'REINTENTAR');
     return;
   }
-  player = newPlayer(level.spawn);
+  currentPowerState = 'small';
+  player = newPlayer(level.spawn, 'small');
   timeLeft = LEVEL_TIME;
   invulnUntil = Date.now() + INVULN_TIME;
+}
+
+function hurtPlayer() {
+  if (Date.now() < invulnUntil) return;
+  if (player.powerState !== 'small') {
+    setPowerState(player.powerState === 'fire' ? 'big' : 'small');
+    invulnUntil = Date.now() + INVULN_TIME;
+    return;
+  }
+  killPlayer();
 }
 
 function completeLevel() {
@@ -343,16 +458,26 @@ function updatePlaying(dt) {
   }
   player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
 
-  // jump
-  const jumpJustPressed = keys.jump && !jumpHeldPrev;
-  if (jumpJustPressed && player.onGround) {
+  // jump: buffered press + coyote time, so a tap always registers even if it
+  // lands a frame or two before touching ground / after leaving a ledge
+  const now = performance.now();
+  if (player.onGround) coyoteUntil = now + COYOTE_MS;
+  if (now < jumpBufferUntil && now < coyoteUntil) {
     player.vy = JUMP_VELOCITY;
     player.onGround = false;
+    jumpBufferUntil = 0;
+    coyoteUntil = 0;
   }
   if (!keys.jump && player.vy < JUMP_VELOCITY * JUMP_CUT) {
     player.vy = JUMP_VELOCITY * JUMP_CUT;
   }
-  jumpHeldPrev = keys.jump;
+
+  // shoot (fire flower only)
+  if (now < shootBufferUntil && player.powerState === 'fire' && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+    spawnFireball();
+    lastShotAt = now;
+    shootBufferUntil = 0;
+  }
 
   // gravity
   player.vy += GRAVITY * dt;
@@ -380,6 +505,30 @@ function updatePlaying(dt) {
     }
   }
 
+  // mushrooms (grow)
+  for (const m of level.mushrooms) {
+    if (m.taken) continue;
+    if (aabbOverlap(player, m)) {
+      m.taken = true;
+      if (player.powerState === 'small') setPowerState('big');
+      score += MUSHROOM_SCORE;
+      hud.score.textContent = score;
+    }
+  }
+
+  // flowers (fire power)
+  for (const f of level.flowers) {
+    if (f.taken) continue;
+    if (aabbOverlap(player, f)) {
+      f.taken = true;
+      setPowerState('fire');
+      score += FLOWER_SCORE;
+      hud.score.textContent = score;
+    }
+  }
+
+  updateFireballs(dt);
+
   // goombas
   for (const g of level.goombas) {
     if (!g.alive) continue;
@@ -397,7 +546,7 @@ function updatePlaying(dt) {
         score += 100;
         hud.score.textContent = score;
       } else {
-        killPlayer();
+        hurtPlayer();
         return;
       }
     }
@@ -560,39 +709,109 @@ function drawFlag() {
 function drawPlayer() {
   if (Date.now() < invulnUntil && Math.floor(Date.now() / 100) % 2 === 0) return;
   const px = player.x - camera.x;
+  const capH = 8, faceH = 10, shoesH = 6;
+  const bodyTop = capH + faceH - 1;
+  const overallsH = player.h - bodyTop;
+  const overallsColor = player.powerState === 'fire' ? '#e0392b' : '#2e5fd9';
+
   ctx.save();
   ctx.translate(px + player.w / 2, player.y);
   ctx.scale(player.facing, 1);
   ctx.translate(-player.w / 2, 0);
 
   ctx.fillStyle = '#e0392b';
-  ctx.fillRect(0, 0, player.w, 8);
-  ctx.fillRect(-2, 6, player.w + 4, 5);
+  ctx.fillRect(0, 0, player.w, capH);
+  ctx.fillRect(-2, capH - 2, player.w + 4, 5);
 
   ctx.fillStyle = '#f6c39a';
-  ctx.fillRect(2, 8, player.w - 4, 10);
+  ctx.fillRect(2, capH, player.w - 4, faceH);
 
-  ctx.fillStyle = '#2e5fd9';
-  ctx.fillRect(0, 17, player.w, 13);
+  ctx.fillStyle = overallsColor;
+  ctx.fillRect(0, bodyTop, player.w, overallsH);
 
   ctx.fillStyle = '#f6c39a';
-  ctx.fillRect(-3, 18, 5, 8);
-  ctx.fillRect(player.w - 2, 18, 5, 8);
+  ctx.fillRect(-3, bodyTop + 1, 5, 8);
+  ctx.fillRect(player.w - 2, bodyTop + 1, 5, 8);
 
   ctx.fillStyle = '#3a2a1a';
-  ctx.fillRect(1, player.h - 6, 8, 6);
-  ctx.fillRect(player.w - 9, player.h - 6, 8, 6);
+  ctx.fillRect(1, player.h - shoesH, 8, shoesH);
+  ctx.fillRect(player.w - 9, player.h - shoesH, 8, shoesH);
 
   ctx.fillStyle = '#000';
-  ctx.fillRect(player.w - 8, 10, 3, 3);
+  ctx.fillRect(player.w - 8, capH + 2, 3, 3);
 
   ctx.restore();
+}
+
+function drawMushrooms() {
+  for (const m of level.mushrooms) {
+    if (m.taken) continue;
+    const px = m.x - camera.x;
+    if (px < -30 || px > CANVAS_W + 30) continue;
+    ctx.fillStyle = '#f2d9b8';
+    ctx.fillRect(px + m.w * 0.3, m.y + m.h * 0.45, m.w * 0.4, m.h * 0.55);
+    ctx.fillStyle = '#e0392b';
+    ctx.beginPath();
+    ctx.arc(px + m.w / 2, m.y + m.h * 0.45, m.w / 2, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(px, m.y + m.h * 0.3, m.w, m.h * 0.2);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(px + m.w * 0.3, m.y + m.h * 0.25, 3, 0, Math.PI * 2);
+    ctx.arc(px + m.w * 0.7, m.y + m.h * 0.25, 3, 0, Math.PI * 2);
+    ctx.arc(px + m.w * 0.5, m.y + m.h * 0.12, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawFlowers(t) {
+  for (const f of level.flowers) {
+    if (f.taken) continue;
+    const px = f.x - camera.x;
+    if (px < -30 || px > CANVAS_W + 30) continue;
+    const bob = Math.sin(t / 260 + f.x) * 1.5;
+    const cx = px + f.w / 2, cy = f.y + f.h / 2 + bob;
+    ctx.strokeStyle = '#29d985';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 6);
+    ctx.lineTo(cx, f.y + f.h);
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 4; i++) {
+      const ang = (Math.PI / 2) * i + Math.PI / 4;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(ang) * 6, cy + Math.sin(ang) * 6, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ff8a3d';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawFireballs() {
+  for (const fb of fireballs) {
+    const px = fb.x - camera.x;
+    ctx.fillStyle = '#ff7a1a';
+    ctx.beginPath();
+    ctx.arc(px, fb.y, fb.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.arc(px, fb.y, fb.r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function render(t) {
   drawBackground();
   drawTiles();
   drawCoins(t);
+  drawMushrooms();
+  drawFlowers(t);
+  drawFireballs();
   drawGoombas();
   drawFlag();
   drawPlayer();

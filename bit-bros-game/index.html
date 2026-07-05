@@ -22,10 +22,11 @@
   <div id="overlay" class="overlay hidden">
     <div class="overlay-box">
       <h1 id="overlay-title">BIT BROS</h1>
-      <p id="overlay-msg">Un platformer estilo retro. Corré, saltá, pisá enemigos y llegá a la bandera.</p>
+      <p id="overlay-msg">Un platformer estilo retro. Corré, saltá, pisá enemigos, agarrá el hongo para crecer y la flor para tirar fuego, y llegá a la bandera.</p>
       <div id="overlay-controls">
         <span>⟵ ⟶ / A D : mover</span>
         <span>ESPACIO / ↑ / W : saltar</span>
+        <span>X / SHIFT : disparar (con flor de fuego)</span>
         <span>R : reiniciar</span>
       </div>
       <button id="overlay-btn">JUGAR</button>
@@ -37,7 +38,10 @@
       <button id="btn-left" class="touch-btn">◀</button>
       <button id="btn-right" class="touch-btn">▶</button>
     </div>
-    <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
+    <div class="touch-side">
+      <button id="btn-shoot" class="touch-btn touch-fire">🔥</button>
+      <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
+    </div>
   </div>
 </div>
 

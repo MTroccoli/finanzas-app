@@ -115,6 +115,7 @@ canvas {
 }
 
 .touch-btn {
+  touch-action: none;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -125,8 +126,8 @@ canvas {
   user-select: none;
 }
 
-.touch-side { display: flex; gap: 10px; }
-.touch-jump { margin-left: auto; width: 68px; height: 68px; }
+.touch-side { display: flex; align-items: center; gap: 10px; }
+.touch-jump { width: 68px; height: 68px; }
 
 @media (hover: none) and (pointer: coarse) {
   #touch-controls { display: flex; }
