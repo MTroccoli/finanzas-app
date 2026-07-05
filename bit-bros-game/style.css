@@ -105,28 +105,27 @@ canvas {
 
 #touch-controls {
   display: none;
-  position: absolute;
-  bottom: 14px;
-  left: 0;
-  right: 0;
   justify-content: space-between;
-  padding: 0 14px;
-  pointer-events: none;
+  align-items: center;
+  gap: 10px;
+  background: #111528;
+  border: 3px solid #3a4a7a;
+  border-top: none;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
 .touch-btn {
-  pointer-events: auto;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.4);
-  background: rgba(20,25,45,0.55);
+  background: rgba(255,255,255,0.08);
   color: #fff;
   font-size: 20px;
   user-select: none;
 }
 
-#btn-left, #btn-right { display: inline-block; margin-right: 8px; }
+.touch-side { display: flex; gap: 10px; }
 .touch-jump { margin-left: auto; width: 68px; height: 68px; }
 
 @media (hover: none) and (pointer: coarse) {

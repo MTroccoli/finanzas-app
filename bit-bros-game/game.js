@@ -259,7 +259,8 @@ overlayBtn.addEventListener('click', () => {
 // ---------------------------------------------------------------
 function isSolidTile(tx, ty) {
   if (ty < 0) return false;
-  if (ty >= level.height || tx < 0 || tx >= level.width) return true; // treat OOB sides/floor as solid wall
+  if (ty >= level.height) return false; // below the map: open pit, falling here should kill the player
+  if (tx < 0 || tx >= level.width) return true; // treat OOB sides as solid walls
   return level.solid[ty][tx];
 }
 
