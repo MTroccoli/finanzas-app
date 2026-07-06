@@ -177,3 +177,24 @@ canvas {
   #game-wrap { display: none; }
   #rotate-overlay { display: flex; }
 }
+
+/* Phones in landscape: the canvas' fixed 800px width ignores the short
+   viewport height there, pushing the HUD and touch controls off-screen.
+   Let the canvas shrink to whatever height remains instead. */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+  html, body { height: 100dvh; }
+  #game-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+  #hud, #touch-controls { flex: none; }
+  canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    align-self: center;
+  }
+}
