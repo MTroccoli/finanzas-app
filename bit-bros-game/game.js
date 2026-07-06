@@ -6,13 +6,13 @@ const TILE = 32;
 const CANVAS_W = 800;
 const CANVAS_H = 480;
 
-const GRAVITY = 0.62;
+const GRAVITY = 0.5;
 const MAX_FALL = 15;
 const MOVE_ACCEL = 0.7;
 const MAX_SPEED = 4.4;
 const AIR_ACCEL = 0.5;
 const FRICTION = 0.78;
-const JUMP_VELOCITY = -11.8;
+const JUMP_VELOCITY = -12.8; // generous jump (~5 tiles of height) so every platform in the levels is reachable
 const JUMP_CUT = 0.5;
 const STOMP_BOUNCE = -8.5;
 const STOMP_TOLERANCE = 14;
@@ -71,6 +71,12 @@ function buildLevel(spec) {
     flowers: flowers.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 24, w: 22, h: 24, taken: false,
     })),
+    villain: spec.villain ? {
+      x: spec.villain.x * TILE, y: spec.villain.y * TILE - 42,
+      w: 30, h: 42,
+      minX: spec.villain.range[0] * TILE, maxX: spec.villain.range[1] * TILE,
+      vx: 1.4, alive: true, hp: spec.villain.hp ?? 3, hitUntil: 0,
+    } : null,
     flag: { x: flag.x * TILE + TILE / 2, y: (groundY) * TILE, topY: flag.y * TILE },
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },
     pixelWidth: width * TILE,
@@ -83,21 +89,20 @@ const LEVEL_SPECS = [
     name: '1-1',
     width: 70, height: 15, groundY: 13,
     pits: [[18, 20], [40, 42]],
+    // Platforms sit 4 tiles above the ground (clearing a running player's
+    // head, well within the jump's ~5-tile max height) and are spaced with
+    // at least 5 clear tiles of runway on both sides so a jump never clips
+    // a neighboring pit or platform mid-arc.
     platforms: [
-      { x: 8, y: 9, w: 4 },
-      { x: 22, y: 10, w: 3 },
-      { x: 30, y: 8, w: 5 },
-      { x: 44, y: 9, w: 4 },
-      { x: 52, y: 11, w: 3 },
-      { x: 60, y: 8, w: 4 },
+      { x: 8, y: 9, w: 3 },
+      { x: 30, y: 9, w: 3 },
+      { x: 55, y: 9, w: 3 },
     ],
     coins: [
-      [9, 8], [10, 8], [11, 8],
-      [23, 9], [24, 9],
-      [31, 7], [32, 7], [33, 7], [34, 7],
-      [45, 8], [46, 8],
-      [61, 7], [62, 7], [63, 7],
-      [5, 12], [14, 12], [26, 12], [36, 12], [50, 12],
+      [9, 8], [10, 8],
+      [31, 8],
+      [56, 8], [57, 8],
+      [14, 12], [24, 12], [36, 12], [48, 12], [62, 12],
     ],
     goombas: [
       { x: 12, y: 13, range: [10, 17] },
@@ -106,7 +111,7 @@ const LEVEL_SPECS = [
       { x: 58, y: 13, range: [55, 66] },
     ],
     mushrooms: [[6, 13]],
-    flowers: [[32, 8]],
+    flowers: [[31, 9]],
     flag: { x: 66, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -114,34 +119,31 @@ const LEVEL_SPECS = [
     name: '1-2',
     width: 85, height: 15, groundY: 13,
     pits: [[10, 11], [24, 26], [38, 39], [55, 58], [70, 71]],
+    // Platforms sit 4 tiles above the ground (clearing a running player's
+    // head, well within the jump's ~5-tile max height) and are spaced with
+    // at least 5 clear tiles of runway on both sides so a jump never clips
+    // a neighboring pit or platform mid-arc.
     platforms: [
-      { x: 5, y: 9, w: 3 },
-      { x: 14, y: 10, w: 4 },
-      { x: 20, y: 7, w: 3 },
-      { x: 29, y: 9, w: 5 },
-      { x: 42, y: 8, w: 3 },
-      { x: 47, y: 10, w: 4 },
-      { x: 60, y: 9, w: 4 },
-      { x: 66, y: 7, w: 3 },
-      { x: 75, y: 9, w: 5 },
+      { x: 16, y: 9, w: 3 },
+      { x: 46, y: 9, w: 3 },
+      { x: 63, y: 9, w: 3 },
     ],
     coins: [
-      [6, 8], [15, 9], [16, 9], [21, 6], [30, 8], [31, 8], [32, 8],
-      [43, 7], [48, 9], [49, 9], [61, 8], [62, 8], [67, 6],
-      [76, 8], [77, 8], [78, 8], [79, 8],
-      [2, 12], [18, 12], [34, 12], [45, 12], [63, 12],
+      [17, 8],
+      [47, 8],
+      [64, 8], [65, 8],
+      [3, 12], [20, 12], [33, 12], [52, 12], [67, 12], [79, 12],
     ],
     goombas: [
-      { x: 8, y: 13, range: [4, 9] },
-      { x: 16, y: 10, range: [14, 17] },
-      { x: 30, y: 9, range: [29, 33] },
-      { x: 44, y: 13, range: [41, 54] },
-      { x: 61, y: 13, range: [59, 69] },
-      { x: 76, y: 9, range: [75, 79] },
-      { x: 80, y: 13, range: [73, 84] },
+      { x: 6, y: 13, range: [3, 9] },
+      { x: 16, y: 13, range: [13, 22] },
+      { x: 30, y: 13, range: [28, 36] },
+      { x: 44, y: 13, range: [41, 53] },
+      { x: 62, y: 13, range: [60, 68] },
+      { x: 78, y: 13, range: [74, 83] },
     ],
     mushrooms: [[3, 13]],
-    flowers: [[21, 7]],
+    flowers: [[47, 9]],
     flag: { x: 82, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -149,34 +151,39 @@ const LEVEL_SPECS = [
     name: '1-3',
     width: 100, height: 15, groundY: 13,
     pits: [[9, 10], [20, 22], [33, 34], [44, 47], [58, 60], [72, 74], [88, 90]],
+    // Platforms sit 4 tiles above the ground (clearing a running player's
+    // head, well within the jump's ~5-tile max height) and are spaced with
+    // at least 2-3 clear tiles of runway on both sides so a jump never clips
+    // a neighboring pit or platform mid-arc.
     platforms: [
-      { x: 4, y: 9, w: 3 }, { x: 12, y: 7, w: 3 }, { x: 17, y: 10, w: 3 },
-      { x: 24, y: 8, w: 4 }, { x: 30, y: 6, w: 3 }, { x: 36, y: 9, w: 5 },
-      { x: 48, y: 8, w: 3 }, { x: 52, y: 6, w: 3 }, { x: 62, y: 9, w: 4 },
-      { x: 68, y: 7, w: 3 }, { x: 76, y: 10, w: 4 }, { x: 82, y: 8, w: 3 },
-      { x: 92, y: 9, w: 6 },
+      { x: 15, y: 9, w: 3 },
+      { x: 27, y: 9, w: 3 },
+      { x: 38, y: 9, w: 3 },
+      { x: 52, y: 9, w: 3 },
+      { x: 65, y: 9, w: 3 },
+      { x: 80, y: 9, w: 4 },
     ],
     coins: [
-      [5, 8], [13, 6], [18, 9], [25, 7], [26, 7], [31, 5], [37, 8], [38, 8], [39, 8],
-      [49, 7], [53, 5], [63, 8], [64, 8], [69, 6], [77, 9], [78, 9], [83, 7],
-      [93, 8], [94, 8], [95, 8], [96, 8],
-      [2, 12], [15, 12], [28, 12], [42, 12], [55, 12], [65, 12], [80, 12],
+      [16, 8],
+      [28, 8],
+      [39, 8],
+      [53, 8], [54, 8],
+      [66, 8],
+      [81, 8], [82, 8],
+      [5, 12], [24, 12], [42, 12], [56, 12], [70, 12], [85, 12],
     ],
     goombas: [
-      { x: 6, y: 13, range: [2, 8] },
-      { x: 13, y: 7, range: [12, 14] },
-      { x: 25, y: 13, range: [23, 32] },
-      { x: 37, y: 9, range: [36, 40] },
-      { x: 42, y: 13, range: [35, 43] },
-      { x: 50, y: 13, range: [48, 57] },
-      { x: 63, y: 9, range: [62, 65] },
-      { x: 70, y: 13, range: [61, 71] },
-      { x: 79, y: 13, range: [75, 87] },
-      { x: 93, y: 9, range: [92, 97] },
-      { x: 96, y: 13, range: [91, 99] },
+      { x: 6, y: 13, range: [3, 8] },
+      { x: 16, y: 13, range: [13, 19] },
+      { x: 27, y: 13, range: [24, 31] },
+      { x: 39, y: 13, range: [36, 42] },
+      { x: 53, y: 13, range: [49, 56] },
+      { x: 65, y: 13, range: [62, 70] },
+      { x: 80, y: 13, range: [76, 86] },
     ],
     mushrooms: [[3, 13]],
-    flowers: [[31, 6]],
+    flowers: [[28, 9]],
+    villain: { x: 95, y: 13, range: [92, 98], hp: 3 },
     flag: { x: 97, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -322,6 +329,13 @@ function updateFireballs(dt) {
         break;
       }
     }
+
+    const v = level.villain;
+    if (fb.alive && v && v.alive && Date.now() >= v.hitUntil &&
+        fb.x + fb.r > v.x && fb.x - fb.r < v.x + v.w && fb.y + fb.r > v.y && fb.y - fb.r < v.y + v.h) {
+      fb.alive = false;
+      damageVillain();
+    }
   }
   fireballs = fireballs.filter(fb => fb.alive);
 }
@@ -406,7 +420,9 @@ function moveAndCollide(p, dt) {
 // Update
 // ---------------------------------------------------------------
 function killPlayer() {
-  if (Date.now() < invulnUntil) return;
+  // No invulnerability gate here: falling/timeout must always kill instantly.
+  // Enemy-contact damage is already gated by hurtPlayer()'s own invuln check
+  // before it ever reaches this function.
   lives--;
   hud.lives.textContent = Math.max(lives, 0);
   if (lives <= 0) {
@@ -418,6 +434,20 @@ function killPlayer() {
   player = newPlayer(level.spawn, 'small');
   timeLeft = LEVEL_TIME;
   invulnUntil = Date.now() + INVULN_TIME;
+}
+
+function damageVillain() {
+  const v = level.villain;
+  if (!v || !v.alive || Date.now() < v.hitUntil) return;
+  v.hp--;
+  v.hitUntil = Date.now() + 500;
+  if (v.hp <= 0) {
+    v.alive = false;
+    score += 5000;
+  } else {
+    score += 200;
+  }
+  hud.score.textContent = score;
 }
 
 function hurtPlayer() {
@@ -545,6 +575,25 @@ function updatePlaying(dt) {
         player.vy = STOMP_BOUNCE;
         score += 100;
         hud.score.textContent = score;
+      } else {
+        hurtPlayer();
+        return;
+      }
+    }
+  }
+
+  // villain (boss)
+  if (level.villain && level.villain.alive) {
+    const v = level.villain;
+    v.x += v.vx * dt;
+    if (v.x < v.minX) { v.x = v.minX; v.vx = Math.abs(v.vx); }
+    if (v.x + v.w > v.maxX) { v.x = v.maxX - v.w; v.vx = -Math.abs(v.vx); }
+
+    if (aabbOverlap(player, v)) {
+      const stomped = player.vy > 0 && (player.y + player.h - v.y) < STOMP_TOLERANCE;
+      if (stomped) {
+        player.vy = STOMP_BOUNCE;
+        damageVillain();
       } else {
         hurtPlayer();
         return;
@@ -709,38 +758,137 @@ function drawFlag() {
 function drawPlayer() {
   if (Date.now() < invulnUntil && Math.floor(Date.now() / 100) % 2 === 0) return;
   const px = player.x - camera.x;
-  const capH = 8, faceH = 10, shoesH = 6;
-  const bodyTop = capH + faceH - 1;
-  const overallsH = player.h - bodyTop;
-  const overallsColor = player.powerState === 'fire' ? '#e0392b' : '#2e5fd9';
+  const w = player.w, h = player.h;
+  const cowlH = 10, faceH = 8, shoesH = 6;
+  const bodyTop = cowlH + faceH - 1;
+  const suitH = h - bodyTop;
+  const accent = player.powerState === 'fire' ? '#ff8a3d' : '#ffd166';
 
   ctx.save();
-  ctx.translate(px + player.w / 2, player.y);
+  ctx.translate(px + w / 2, player.y);
   ctx.scale(player.facing, 1);
-  ctx.translate(-player.w / 2, 0);
+  ctx.translate(-w / 2, 0);
 
-  ctx.fillStyle = '#e0392b';
-  ctx.fillRect(0, 0, player.w, capH);
-  ctx.fillRect(-2, capH - 2, player.w + 4, 5);
+  // cape trailing behind (opposite the facing direction)
+  ctx.fillStyle = '#14161c';
+  ctx.beginPath();
+  ctx.moveTo(w * 0.3, cowlH - 2);
+  ctx.lineTo(-w * 0.6, h * 0.55);
+  ctx.lineTo(-w * 0.2, h);
+  ctx.lineTo(w * 0.55, bodyTop + 2);
+  ctx.closePath();
+  ctx.fill();
 
-  ctx.fillStyle = '#f6c39a';
-  ctx.fillRect(2, capH, player.w - 4, faceH);
+  // cowl with pointed ears
+  ctx.fillStyle = '#20242e';
+  ctx.beginPath();
+  ctx.moveTo(2, cowlH);
+  ctx.lineTo(0, -6);
+  ctx.lineTo(w * 0.3, cowlH * 0.4);
+  ctx.lineTo(w * 0.7, cowlH * 0.4);
+  ctx.lineTo(w, -6);
+  ctx.lineTo(w - 2, cowlH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(0, cowlH * 0.5, w, cowlH * 0.6);
 
-  ctx.fillStyle = overallsColor;
-  ctx.fillRect(0, bodyTop, player.w, overallsH);
+  // jaw / face under the cowl
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(3, cowlH, w - 6, faceH);
 
-  ctx.fillStyle = '#f6c39a';
+  // white eye slits
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(w * 0.55, cowlH + 2, 5, 2.5);
+  ctx.fillRect(w * 0.2, cowlH + 2, 5, 2.5);
+
+  // suit
+  ctx.fillStyle = '#2b2f38';
+  ctx.fillRect(0, bodyTop, w, suitH);
+
+  // utility belt
+  ctx.fillStyle = '#171920';
+  ctx.fillRect(0, bodyTop + suitH * 0.45, w, 4);
+
+  // chest emblem
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  ctx.ellipse(w / 2, bodyTop + 6, w * 0.28, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#0c0d10';
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 4, bodyTop + 6);
+  ctx.lineTo(w / 2 - 1, bodyTop + 3.5);
+  ctx.lineTo(w / 2, bodyTop + 6);
+  ctx.lineTo(w / 2 + 1, bodyTop + 3.5);
+  ctx.lineTo(w / 2 + 4, bodyTop + 6);
+  ctx.lineTo(w / 2, bodyTop + 8.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // gloves
+  ctx.fillStyle = '#171920';
   ctx.fillRect(-3, bodyTop + 1, 5, 8);
-  ctx.fillRect(player.w - 2, bodyTop + 1, 5, 8);
+  ctx.fillRect(w - 2, bodyTop + 1, 5, 8);
 
-  ctx.fillStyle = '#3a2a1a';
-  ctx.fillRect(1, player.h - shoesH, 8, shoesH);
-  ctx.fillRect(player.w - 9, player.h - shoesH, 8, shoesH);
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(player.w - 8, capH + 2, 3, 3);
+  // boots
+  ctx.fillStyle = '#0c0d10';
+  ctx.fillRect(1, h - shoesH, 8, shoesH);
+  ctx.fillRect(w - 9, h - shoesH, 8, shoesH);
 
   ctx.restore();
+}
+
+function drawVillain() {
+  const v = level.villain;
+  if (!v || !v.alive) return;
+  const px = v.x - camera.x;
+  if (px < -50 || px > CANVAS_W + 50) return;
+  if (Date.now() < v.hitUntil && Math.floor(Date.now() / 80) % 2 === 0) return;
+
+  ctx.fillStyle = '#3ddc5c';
+  ctx.beginPath();
+  ctx.moveTo(px - 4, v.y + 6); ctx.lineTo(px + 2, v.y - 6); ctx.lineTo(px + 6, v.y + 4);
+  ctx.lineTo(px + v.w * 0.35, v.y - 10); ctx.lineTo(px + v.w * 0.5, v.y + 2);
+  ctx.lineTo(px + v.w * 0.65, v.y - 10); ctx.lineTo(px + v.w - 6, v.y + 4);
+  ctx.lineTo(px + v.w - 2, v.y - 6); ctx.lineTo(px + v.w + 4, v.y + 6);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#f4f0ea';
+  ctx.fillRect(px + 4, v.y + 4, v.w - 8, 14);
+
+  ctx.strokeStyle = '#c0244a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(px + 6, v.y + 13);
+  ctx.quadraticCurveTo(px + v.w / 2, v.y + 20, px + v.w - 6, v.y + 13);
+  ctx.stroke();
+
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(px + v.w * 0.28, v.y + 9, 3, 4);
+  ctx.fillRect(px + v.w * 0.65, v.y + 9, 3, 4);
+
+  ctx.fillStyle = '#5a2d8c';
+  ctx.fillRect(px, v.y + 18, v.w, v.h - 24);
+
+  ctx.fillStyle = '#f2a53d';
+  ctx.beginPath();
+  ctx.moveTo(px + v.w / 2, v.y + 18);
+  ctx.lineTo(px + v.w / 2 - 6, v.y + 24);
+  ctx.lineTo(px + v.w / 2 + 6, v.y + 24);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(px + 1, v.y + v.h - 6, 9, 6);
+  ctx.fillRect(px + v.w - 10, v.y + v.h - 6, 9, 6);
+
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < v.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(px + v.w / 2 - 12 + i * 12, v.y - 16, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawMushrooms() {
@@ -813,6 +961,7 @@ function render(t) {
   drawFlowers(t);
   drawFireballs();
   drawGoombas();
+  drawVillain();
   drawFlag();
   drawPlayer();
 
@@ -843,5 +992,5 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-showOverlay('BIT BROS', 'Un platformer estilo retro. Corré, saltá, pisá enemigos y llegá a la bandera.', 'JUGAR');
+showOverlay('BIT BROS', 'Un héroe murciélago corre y salta por la ciudad: pisá enemigos, agarrá el hongo para crecer y la flor para tirar fuego. Al final del último nivel te espera un villano con sonrisa siniestra.', 'JUGAR');
 requestAnimationFrame(loop);

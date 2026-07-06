@@ -10,6 +10,9 @@ html, body {
   color: #fff;
   overflow: hidden;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #game-wrap {
@@ -116,6 +119,10 @@ canvas {
 
 .touch-btn {
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -123,7 +130,6 @@ canvas {
   background: rgba(255,255,255,0.08);
   color: #fff;
   font-size: 20px;
-  user-select: none;
 }
 
 .touch-side { display: flex; align-items: center; gap: 10px; }
