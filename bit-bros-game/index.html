@@ -23,39 +23,40 @@
 </div>
 
 <div id="game-wrap">
-  <div id="hud">
-    <div class="hud-item">SCORE <span id="hud-score">0</span></div>
-    <div class="hud-item">COINS <span id="hud-coins">0</span></div>
-    <div class="hud-item">VIDAS <span id="hud-lives">3</span></div>
-    <div class="hud-item">NIVEL <span id="hud-level">1-1</span></div>
-    <div class="hud-item">TIEMPO <span id="hud-time">400</span></div>
+  <div id="gutter-left" class="side-gutter">
+    <button id="btn-left" class="touch-btn">◀</button>
+    <button id="btn-right" class="touch-btn">▶</button>
   </div>
 
-  <canvas id="game" width="800" height="480"></canvas>
+  <div id="canvas-area">
+    <div id="hud">
+      <div class="hud-item">SCORE <span id="hud-score">0</span></div>
+      <div class="hud-item">COINS <span id="hud-coins">0</span></div>
+      <div class="hud-item">VIDAS <span id="hud-lives">3</span></div>
+      <div class="hud-item">NIVEL <span id="hud-level">1-1</span></div>
+      <div class="hud-item">TIEMPO <span id="hud-time">400</span></div>
+    </div>
 
-  <div id="overlay" class="overlay hidden">
-    <div class="overlay-box">
-      <h1 id="overlay-title">BIT BROS</h1>
-      <p id="overlay-msg">Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el emblema de Batman para crecer y tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte por los huecos más anchos. Al final del último nivel te espera un villano con sonrisa siniestra.</p>
-      <div id="overlay-controls">
-        <span>⟵ ⟶ / A D : mover</span>
-        <span>ESPACIO / ↑ / W : saltar (y balancearte cerca de un poste)</span>
-        <span>X / SHIFT : tirar batarang (con el murciélago especial)</span>
-        <span>R : reiniciar</span>
+    <canvas id="game" width="800" height="480"></canvas>
+
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <h1 id="overlay-title">BIT BROS</h1>
+        <p id="overlay-msg">Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el emblema de Batman para crecer y tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte por los huecos más anchos. Al final del último nivel te espera un villano con sonrisa siniestra.</p>
+        <div id="overlay-controls">
+          <span>⟵ ⟶ / A D : mover</span>
+          <span>ESPACIO / ↑ / W : saltar (y balancearte cerca de un poste)</span>
+          <span>X / SHIFT : tirar batarang (con el murciélago especial)</span>
+          <span>R : reiniciar</span>
+        </div>
+        <button id="overlay-btn">JUGAR</button>
       </div>
-      <button id="overlay-btn">JUGAR</button>
     </div>
   </div>
 
-  <div id="touch-controls">
-    <div class="touch-side">
-      <button id="btn-left" class="touch-btn">◀</button>
-      <button id="btn-right" class="touch-btn">▶</button>
-    </div>
-    <div class="touch-side">
-      <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
-      <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
-    </div>
+  <div id="gutter-right" class="side-gutter">
+    <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
+    <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
   </div>
 </div>
 
