@@ -36,14 +36,36 @@
 
     <div id="overlay" class="overlay hidden">
       <div class="overlay-box">
-        <h1 id="overlay-title">BIT BROS — ACTO 1</h1>
-        <p id="overlay-msg">Dos Caras secuestró a Robin. La única pista lleva al galpón de Bane, al otro lado de los techos de Gotham. Saltá cerca de un poste de luz para engancharte con la cuerda, trepá casas y edificios, pisá ladrones y esquivá pájaros. El emblema de Batman te hace más fuerte. Al final del camino, Bane te espera en su galpón.</p>
-        <div id="overlay-controls">
-          <span>⟵ ⟶ / A D : mover</span>
-          <span>ESPACIO / ↑ / W : saltar (y balancearte cerca de un poste)</span>
-          <span>R : reiniciar</span>
+        <!-- Screen 1: ask for the player's name -->
+        <div id="menu-name">
+          <h1 class="menu-logo">BIT BROS</h1>
+          <p class="menu-tag">Gotham te necesita. ¿Cómo te llamás, héroe?</p>
+          <input id="player-name" type="text" maxlength="20" placeholder="Tu nombre"
+                 autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" />
+          <p id="name-error" class="menu-error"></p>
+          <button id="btn-name-ok" class="menu-btn">ACEPTAR</button>
         </div>
-        <button id="overlay-btn">JUGAR</button>
+
+        <!-- Screen 2: new game or continue -->
+        <div id="menu-choice" class="hidden">
+          <h1 class="menu-logo">BIT BROS</h1>
+          <p id="menu-greet" class="menu-tag"></p>
+          <button id="btn-new" class="menu-btn">NUEVA PARTIDA</button>
+          <button id="btn-continue" class="menu-btn menu-btn-alt" disabled>CONTINUAR</button>
+          <button id="btn-change-name" class="menu-link">cambiar nombre</button>
+        </div>
+
+        <!-- Screen 3: intro instructions / game over / win (driven by showOverlay) -->
+        <div id="menu-message" class="hidden">
+          <h1 id="overlay-title">BIT BROS — ACTO 1</h1>
+          <p id="overlay-msg">Dos Caras secuestró a Robin. La única pista lleva al galpón de Bane, al otro lado de los techos de Gotham. Saltá cerca de un poste de luz para engancharte con la cuerda, trepá casas y edificios, pisá ladrones y esquivá pájaros. El emblema de Batman te hace más fuerte. Al final del camino, Bane te espera en su galpón.</p>
+          <div id="overlay-controls">
+            <span>⟵ ⟶ / A D : mover</span>
+            <span>ESPACIO / ↑ / W : saltar (y balancearte cerca de un poste)</span>
+            <span>R : reiniciar</span>
+          </div>
+          <button id="overlay-btn">JUGAR</button>
+        </div>
       </div>
     </div>
 

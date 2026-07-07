@@ -69,6 +69,8 @@ canvas {
 }
 
 .overlay.hidden { display: none; }
+/* generic hide, used to switch between the start-menu screens */
+.hidden { display: none !important; }
 
 .overlay-box {
   max-width: 460px;
@@ -115,6 +117,84 @@ canvas {
 #overlay-btn:active {
   transform: translateY(2px);
   box-shadow: 0 2px 0 #1a9c5e;
+}
+
+/* ---- Start menu (name entry + new game / continue) ---- */
+.menu-logo {
+  font-size: 2.8rem;
+  color: #ffd166;
+  text-shadow: 3px 3px 0 #c0392b;
+  letter-spacing: 0.1em;
+  margin-bottom: 14px;
+}
+.menu-tag {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #dbe4ff;
+  margin-bottom: 18px;
+}
+#player-name {
+  font-family: inherit;
+  font-size: 18px;
+  text-align: center;
+  letter-spacing: 0.06em;
+  padding: 12px 16px;
+  width: 100%;
+  max-width: 300px;
+  background: #10152a;
+  border: 2px solid #3a4a7a;
+  border-radius: 6px;
+  color: #fff;
+  outline: none;
+  margin-bottom: 10px;
+}
+#player-name:focus { border-color: #ffd166; }
+.menu-error {
+  min-height: 16px;
+  font-size: 12px;
+  color: #ff6b6b;
+  margin-bottom: 10px;
+}
+.menu-btn {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  margin: 8px auto 0;
+  font-family: inherit;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  padding: 13px 24px;
+  background: #29d985;
+  border: none;
+  border-radius: 6px;
+  color: #06301c;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #1a9c5e;
+}
+.menu-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #1a9c5e; }
+.menu-btn-alt {
+  background: #4a7ad9;
+  color: #041428;
+  box-shadow: 0 4px 0 #2d5199;
+}
+.menu-btn-alt:active { box-shadow: 0 2px 0 #2d5199; }
+.menu-btn:disabled {
+  background: #2a3350;
+  color: #6a769c;
+  cursor: not-allowed;
+  box-shadow: 0 4px 0 #1a2138;
+}
+.menu-link {
+  display: inline-block;
+  margin-top: 16px;
+  background: none;
+  border: none;
+  color: #8fa3d9;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* Touch controls float over the canvas edges: arrows side by side on the

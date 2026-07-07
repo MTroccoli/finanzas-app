@@ -397,8 +397,22 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMsg = document.getElementById('overlay-msg');
 const overlayBtn = document.getElementById('overlay-btn');
+// start-menu elements (name entry + new game / continue)
+const menuName = document.getElementById('menu-name');
+const menuChoice = document.getElementById('menu-choice');
+const menuMessage = document.getElementById('menu-message');
+const nameInput = document.getElementById('player-name');
+const nameError = document.getElementById('name-error');
+const btnNameOk = document.getElementById('btn-name-ok');
+const menuGreet = document.getElementById('menu-greet');
+const btnNew = document.getElementById('btn-new');
+const btnContinue = document.getElementById('btn-continue');
+const btnChangeName = document.getElementById('btn-change-name');
 
 let state = 'start'; // start | cutscene | playing | levelcomplete | win | gameover
+let playerName = '';       // set from the start menu
+let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = continue)
+let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
 let continueOffer = false; // game over at Bane: offer to spend coins to retry
 let cutsceneStart = 0;
 let levelIndex = 0;
@@ -628,6 +642,8 @@ function loadLevel(idx) {
   impactFlashes = [];
   shakeUntil = 0;
   hud.level.textContent = level.name;
+  // remember the furthest level this player has reached, for "Continuar"
+  if (playerName) saveProgress(playerName, idx);
 }
 
 function startGame() {
@@ -637,7 +653,7 @@ function startGame() {
   hud.score.textContent = 0;
   hud.coins.textContent = 0;
   hud.lives.textContent = 3;
-  loadLevel(0);
+  loadLevel(startLevelIndex || 0);
   state = 'playing';
   overlay.classList.add('hidden');
 }
@@ -658,6 +674,113 @@ function restartGame() {
   if (state === 'start') return;
   startGame();
 }
+
+// ---------------------------------------------------------------
+// Player progress: stored in the DC Supabase project (table
+// bitbros_players), with a localStorage mirror so the PWA still knows the
+// last level when offline or if Supabase can't be reached.
+// ---------------------------------------------------------------
+const SUPA_URL = 'https://bpkvotdzbbvkmqkvfxzz.supabase.co';
+const SUPA_KEY = 'sb_publishable_5UUXQvoXrV0X-K8-jZmCUQ_ypRb0aA3';
+const SUPA_PLAYERS = SUPA_URL + '/rest/v1/bitbros_players';
+
+function localKey(name) { return 'bitbros:' + name.trim().toLowerCase(); }
+
+function localGet(name) {
+  const v = parseInt(localStorage.getItem(localKey(name)), 10);
+  return Number.isFinite(v) ? v : 0;
+}
+
+// Returns the furthest level index reached for this name (0 if new).
+// Times out fast so the menu never hangs if Supabase is slow/unreachable.
+async function loadProgress(name) {
+  const local = localGet(name);
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(
+      `${SUPA_PLAYERS}?name=eq.${encodeURIComponent(name.trim())}&select=last_level`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, signal: ctl.signal });
+    clearTimeout(timer);
+    if (r && r.ok) {
+      const rows = await r.json();
+      const remote = rows.length ? (rows[0].last_level | 0) : 0;
+      return Math.max(remote, local);
+    }
+  } catch (e) { /* offline / blocked / timeout: fall back to local */ }
+  return local;
+}
+
+// Persist the high-water mark (never lowers it) to both stores.
+function saveProgress(name, level) {
+  const best = Math.max(savedMaxLevel, level | 0);
+  savedMaxLevel = best;
+  try { localStorage.setItem(localKey(name), String(best)); } catch (e) {}
+  try {
+    fetch(`${SUPA_PLAYERS}?on_conflict=name`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({ name: name.trim(), last_level: best, updated_at: new Date().toISOString() }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------
+// Start menu flow: name -> (new game | continue)
+// ---------------------------------------------------------------
+function showNameMenu() {
+  showMenuSection('name');
+  overlay.classList.remove('hidden');
+  nameError.textContent = '';
+  // prefill the last name used on this device for convenience
+  const last = localStorage.getItem('bitbros:lastName');
+  if (last && !nameInput.value) nameInput.value = last;
+  setTimeout(() => nameInput.focus(), 50);
+}
+
+async function submitName() {
+  const name = nameInput.value.trim();
+  if (name.length < 2) { nameError.textContent = 'Ingresá un nombre (mínimo 2 letras).'; return; }
+  playerName = name;
+  localStorage.setItem('bitbros:lastName', name);
+  btnNameOk.disabled = true;
+  btnNameOk.textContent = 'CARGANDO…';
+  savedMaxLevel = await loadProgress(name);
+  btnNameOk.disabled = false;
+  btnNameOk.textContent = 'ACEPTAR';
+
+  menuGreet.textContent = `Hola, ${name}.`;
+  const hasProgress = savedMaxLevel > 0;
+  btnContinue.disabled = !hasProgress;
+  if (hasProgress) {
+    const lvl = Math.min(savedMaxLevel, LEVEL_SPECS.length - 1);
+    btnContinue.textContent = `CONTINUAR — Nivel ${LEVEL_SPECS[lvl].name}`;
+  } else {
+    btnContinue.textContent = 'CONTINUAR (sin progreso)';
+  }
+  showMenuSection('choice');
+}
+
+btnNameOk.addEventListener('click', submitName);
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitName(); } });
+btnChangeName.addEventListener('click', () => showMenuSection('name'));
+
+// New game: start from the top, showing the story intro first.
+btnNew.addEventListener('click', () => {
+  startLevelIndex = 0;
+  showMenuSection('message'); // the intro instructions + JUGAR button
+});
+
+// Continue: jump straight into the furthest level reached.
+btnContinue.addEventListener('click', () => {
+  if (btnContinue.disabled) return;
+  startLevelIndex = Math.min(savedMaxLevel, LEVEL_SPECS.length - 1);
+  startGame();
+});
 
 overlayBtn.addEventListener('click', () => {
   if (continueOffer) { continueAtBoss(); return; }
@@ -836,10 +959,20 @@ function completeLevel() {
   }
 }
 
+// Toggle which of the three overlay screens is visible (name / choice /
+// message). The message screen is what showOverlay drives for the intro,
+// game-over and win states.
+function showMenuSection(which) {
+  menuName.classList.toggle('hidden', which !== 'name');
+  menuChoice.classList.toggle('hidden', which !== 'choice');
+  menuMessage.classList.toggle('hidden', which !== 'message');
+}
+
 function showOverlay(title, msg, btnLabel) {
   overlayTitle.textContent = title;
   overlayMsg.textContent = msg;
   overlayBtn.textContent = btnLabel;
+  showMenuSection('message');
   overlay.classList.remove('hidden');
 }
 
@@ -2920,5 +3053,5 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-showOverlay('BIT BROS — ACTO 1', 'Dos Caras secuestró a Robin. La única pista lleva al galpón de Bane, al otro lado de los techos de Gotham. Saltá cerca de un poste de luz para engancharte con la cuerda, trepá casas y edificios, pisá ladrones y esquivá pájaros. El emblema de Batman te hace más fuerte. Al final del camino, Bane te espera en su galpón.', 'JUGAR');
+showNameMenu();
 requestAnimationFrame(loop);
