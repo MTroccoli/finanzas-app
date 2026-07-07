@@ -57,9 +57,9 @@ const CAVE_BAT_WAKE_MS = 350;     // eyes-open pause before taking flight
 const CAVE_DROP_INTERVAL_MS = 1400;
 const CAVE_COMPUTER_TRIGGER = 110; // px halfwidth around the batcomputer that opens the expediente
 // batigarra rope control (while swinging)
-const GARRA_REEL_SPEED = 1.6;     // px/frame reeling in (shoot held) / letting out (down held)
+const GARRA_REEL_SPEED = 1.6;     // px/frame reeling the rope in / letting it out
 const GARRA_MIN_RADIUS = 44;
-const GARRA_PUMP = 0.0018;        // angular impulse per frame from left/right while swinging
+const GARRA_PUMP = 0.0009;        // gentle angular impulse: press toward your travel to speed up, opposite to brake
 
 // ---------------------------------------------------------------
 // Level builder: programmatic spec -> tile grid + entity lists
@@ -193,17 +193,31 @@ function buildCaveState(cave, width, height, groundY, solid) {
     weaponChosen: null,   // 'batarang' | 'batigarra'
     choiceSel: 0,
     openedAt: 0,
+    leftStart: false,     // becomes true once the player walks off the spawn
+    nearEntrance: false,
+    selLevel: 0,
+    // replay menu at the entrance: every Act 1 level, plus a "keep going" exit
+    replayOptions: [
+      ...LEVEL_SPECS.map((s, i) => ({ i, name: s.name }))
+        .filter(o => /^1-/.test(o.name)),
+      { i: -1, name: 'SEGUIR' },
+    ],
     stalactites,
     ambientBats: (cave.batTiles || []).map((tx, i) => ({
       x0: tx * TILE, x: tx * TILE, y: 42, baseY: 42,
       state: 'sleep',     // sleep | wake | fly
       wakeAt: 0, vx: hash01(i * 7) > 0.5 ? 2 : -2, seed: i,
     })),
-    dropCols: (cave.dropTiles || []).map((tx, i) => ({
-      x: tx * TILE + 12, tipY: 60, floorY: floorBelow(tx),
-      lastAt: -hash01(i * 13) * CAVE_DROP_INTERVAL_MS,
-      drops: [], ripples: [],
-    })),
+    dropCols: (cave.dropTiles || []).map((tx, i) => {
+      // each column drips at its own rhythm and its own starting phase, so
+      // the drops never fall in unison
+      const interval = CAVE_DROP_INTERVAL_MS * (0.65 + hash01(i * 29) * 1.1);
+      return {
+        x: tx * TILE + 12, tipY: 60, floorY: floorBelow(tx),
+        interval, lastAt: -hash01(i * 13) * interval,
+        drops: [], ripples: [],
+      };
+    }),
   };
 }
 
@@ -385,7 +399,8 @@ const LEVEL_SPECS = [
       door: 73,
       plateauRow: 9,   // the plateau sits lower now, so the ceiling reads high
       batTiles: [5, 9, 14, 19, 22, 35, 48, 55, 68],
-      dropTiles: [7, 16, 45, 60],
+      // ~4 drip columns per screen, staggered so they never fall in unison
+      dropTiles: [5, 11, 18, 23, 30, 37, 44, 49, 55, 61, 67, 72],
     },
     width: 76, height: 15, groundY: 13,
     pits: [],
@@ -412,7 +427,7 @@ const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
 // ---------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------
-const keys = { left: false, right: false, jump: false, shoot: false, down: false };
+const keys = { left: false, right: false, jump: false, shoot: false, down: false, up: false };
 
 // Jump/shoot presses are buffered by timestamp (not sampled per-frame), so a
 // quick tap always registers even if it happens to fall between two frames.
@@ -441,6 +456,14 @@ window.addEventListener('keydown', e => {
     if (['ArrowLeft', 'KeyA'].includes(e.code)) level.cave.choiceSel = 0;
     else if (['ArrowRight', 'KeyD'].includes(e.code)) level.cave.choiceSel = 1;
     else if (confirmCode) chooseCaveWeapon();
+    e.preventDefault();
+    return;
+  }
+  if (state === 'levelselect') {
+    const cv = level.cave;
+    if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.selLevel = Math.max(0, cv.selLevel - 1);
+    else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.selLevel = Math.min(cv.replayOptions.length - 1, cv.selLevel + 1);
+    else if (confirmCode) chooseReplayLevel();
     e.preventDefault();
     return;
   }
@@ -476,6 +499,9 @@ bindButton('btn-left', () => keys.left = true, () => keys.left = false);
 bindButton('btn-right', () => keys.right = true, () => keys.right = false);
 bindButton('btn-jump', () => { keys.jump = true; requestJump(); }, () => keys.jump = false);
 bindButton('btn-shoot', () => { keys.shoot = true; requestShoot(); }, () => keys.shoot = false);
+// rope reel (batigarra): up contracts, down extends
+bindButton('btn-up', () => keys.up = true, () => keys.up = false);
+bindButton('btn-down', () => keys.down = true, () => keys.down = false);
 
 // Mobile browsers (iOS Safari especially) ignore user-scalable=no and can
 // pinch- or double-tap-zoom the page mid-game, leaving it stuck zoomed in
@@ -519,14 +545,19 @@ const btnNew = document.getElementById('btn-new');
 const btnContinue = document.getElementById('btn-continue');
 const btnChangeName = document.getElementById('btn-change-name');
 const btnShoot = document.getElementById('btn-shoot');
+const btnUp = document.getElementById('btn-up');
+const btnDown = document.getElementById('btn-down');
 
 // Show/hide the on-screen fire button and set its icon for the active weapon.
-// It only appears once Batman is armed (from the Batcave choice onward).
+// The rope reel buttons (up/down) only show for the batigarra.
 function updateWeaponButton() {
   if (!btnShoot) return;
   const armed = currentPowerState === 'batarang' || currentPowerState === 'batigarra';
+  const garra = currentPowerState === 'batigarra';
   btnShoot.style.display = armed ? 'flex' : '';
-  btnShoot.textContent = currentPowerState === 'batigarra' ? '🪝' : '🪃';
+  btnShoot.textContent = garra ? '🪝' : '🪃';
+  if (btnUp) btnUp.style.display = garra ? 'flex' : '';
+  if (btnDown) btnDown.style.display = garra ? 'flex' : '';
 }
 
 let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover
@@ -702,12 +733,20 @@ function updateSwing(dt, now) {
   const isGarra = player.powerState === 'batigarra' && !player.swingMinR;
   if (isGarra) {
     // The batigarra gives Batman full rope control instead of the automatic
-    // reel: hold shoot (the grapple trigger) to reel IN, down to let rope OUT,
-    // and left/right to pump the swing for extra momentum.
-    if (keys.shoot) player.swingRadius = Math.max(GARRA_MIN_RADIUS, player.swingRadius - GARRA_REEL_SPEED * dt);
+    // reel: UP (or the grapple trigger) contracts the rope, DOWN extends it.
+    if (keys.up || keys.shoot) player.swingRadius = Math.max(GARRA_MIN_RADIUS, player.swingRadius - GARRA_REEL_SPEED * dt);
     if (keys.down) player.swingRadius = Math.min(GRAPPLE_RANGE, player.swingRadius + GARRA_REEL_SPEED * dt);
-    if (keys.left && !keys.right) player.swingAngularVel -= GARRA_PUMP * dt;
-    if (keys.right && !keys.left) player.swingAngularVel += GARRA_PUMP * dt;
+    // pump: press the side you're swinging toward to speed up, the opposite
+    // side to brake. (vx keeps the sign of angularVel throughout the arc.)
+    let pumpDir = 0;
+    if (keys.right && !keys.left) pumpDir = 1;
+    else if (keys.left && !keys.right) pumpDir = -1;
+    if (pumpDir !== 0) {
+      const vel = player.swingAngularVel;
+      const sameWay = vel === 0 || Math.sign(vel) === pumpDir;
+      const gain = sameWay ? GARRA_PUMP : GARRA_PUMP * 1.6; // braking bites a little harder
+      player.swingAngularVel += pumpDir * gain * dt;
+    }
   } else {
     const reelFloor = player.swingMinR ?? 44;
     player.swingRadius = Math.max(reelFloor, player.swingRadius - (player.swingMinR ? 0 : 0.85) * dt);
@@ -1312,6 +1351,18 @@ function updatePlaying(dt) {
       else { cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0; state = 'choice'; }
       return;
     }
+    // returning to the entrance door opens a "replay an Act 1 level" menu.
+    // Gated on leftStart so it doesn't fire on spawn (Batman starts right by it).
+    if (!cv.leftStart && player.x > cv.entranceX + 4 * TILE) cv.leftStart = true;
+    cv.nearEntrance = cv.leftStart && !player.swinging &&
+      (player.x + player.w / 2) < cv.entranceX + 1.6 * TILE;
+    if (cv.nearEntrance && now < jumpBufferUntil) {
+      jumpBufferUntil = 0;
+      player.vx = 0;
+      cv.selLevel = 0;
+      state = 'levelselect';
+      return;
+    }
   }
 
   if (player.swinging) {
@@ -1687,7 +1738,7 @@ function updateCaveAmbience(dt, now) {
   }
 
   for (const dc of cv.dropCols) {
-    if (now - dc.lastAt > CAVE_DROP_INTERVAL_MS) {
+    if (now - dc.lastAt > dc.interval) {
       dc.lastAt = now;
       dc.drops.push({ y: dc.tipY, vy: 0 });
     }
@@ -1772,6 +1823,13 @@ function drawCaveProps(t) {
     ctx.quadraticCurveTo(ex, gy - 100, ex + 18, gy - 70);
     ctx.lineTo(ex + 18, gy);
     ctx.closePath(); ctx.fill();
+    // "press JUMP to replay a level" prompt when Batman returns to the mouth
+    if (cv.nearEntrance && state === 'playing') {
+      ctx.fillStyle = '#ffd166';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('▲ SALTÁ: repetir nivel', ex, gy - 112 + Math.sin(t / 250) * 3);
+    }
   }
 
   // dripping water columns + puddle ripples
@@ -2103,6 +2161,53 @@ function chooseCaveWeapon() {
   state = 'playing';
 }
 
+// full-screen "replay an Act 1 level" menu (state 'levelselect')
+function drawLevelSelectScreen(now) {
+  const cv = level.cave;
+  const opts = cv.replayOptions;
+  ctx.fillStyle = 'rgba(2,4,10,0.85)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('REPETIR NIVEL — ACTO 1', CANVAS_W / 2, 78);
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
+  ctx.fillText('Elegí un nivel para volver a jugarlo (o SEGUIR para quedarte)', CANVAS_W / 2, 104);
+
+  const n = opts.length;
+  const cw = 120, gap = 18;
+  const totalW = n * cw + (n - 1) * gap;
+  const x0 = (CANVAS_W - totalW) / 2;
+  const cy = 200, ch = 120;
+  opts.forEach((o, i) => {
+    const cx = x0 + i * (cw + gap);
+    const sel = cv.selLevel === i;
+    const resume = o.i < 0;
+    ctx.save();
+    if (sel) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 16; }
+    ctx.fillStyle = resume ? '#101b16' : '#0e1420';
+    ctx.fillRect(cx, cy, cw, ch);
+    ctx.restore();
+    ctx.strokeStyle = sel ? '#ffd166' : '#3a4664'; ctx.lineWidth = sel ? 3 : 2;
+    ctx.strokeRect(cx, cy, cw, ch);
+    // little bat glyph / arrow marker
+    ctx.fillStyle = resume ? '#29d985' : '#7fd4ff';
+    ctx.font = 'bold 26px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(resume ? '↩' : '▶', cx + cw / 2, cy + 52);
+    ctx.fillStyle = resume ? '#29d985' : '#e8f0fb';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText(o.name, cx + cw / 2, cy + 90);
+  });
+
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('◄ ►  elegir      SALTO  confirmar', CANVAS_W / 2, cy + ch + 46);
+}
+
+function chooseReplayLevel() {
+  const cv = level.cave;
+  const opt = cv.replayOptions[cv.selLevel];
+  if (opt && opt.i >= 0) loadLevel(opt.i); // jump into the chosen Act 1 level
+  state = 'playing'; // SEGUIR (i < 0) just resumes the cave
+}
+
 // Touch path only: the jump/shoot buttons buffer a press; arrows are held.
 function handleCaveUIInput(now) {
   const cv = level.cave;
@@ -2113,6 +2218,11 @@ function handleCaveUIInput(now) {
     if (keys.left && !keys.right) cv.choiceSel = 0;
     if (keys.right && !keys.left) cv.choiceSel = 1;
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseCaveWeapon(); }
+  } else if (state === 'levelselect') {
+    if (keys.left && !keys.right && !cv._navHeld) { cv.selLevel = Math.max(0, cv.selLevel - 1); cv._navHeld = true; }
+    else if (keys.right && !keys.left && !cv._navHeld) { cv.selLevel = Math.min(cv.replayOptions.length - 1, cv.selLevel + 1); cv._navHeld = true; }
+    else if (!keys.left && !keys.right) cv._navHeld = false;
+    if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseReplayLevel(); }
   }
 }
 
@@ -3730,11 +3840,13 @@ function loop(now) {
   if (state === 'playing' || state === 'levelcomplete') {
     update(dt);
     render(now);
-  } else if (state === 'computer' || state === 'choice') {
-    // Batcave UI: the frozen scene stays behind the expediente / choice panel
+  } else if (state === 'computer' || state === 'choice' || state === 'levelselect') {
+    // Batcave UI: the frozen scene stays behind the expediente / choice /
+    // replay panel
     render(now);
     if (state === 'computer') drawExpedienteScreen(now);
-    else drawChoiceScreen(now);
+    else if (state === 'choice') drawChoiceScreen(now);
+    else drawLevelSelectScreen(now);
     handleCaveUIInput(now);
   } else if (state === 'cutscene') {
     const ct = now - cutsceneStart;

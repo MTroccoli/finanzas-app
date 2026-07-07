@@ -225,12 +225,26 @@ canvas {
   background: rgba(20, 25, 45, 0.45);
   color: #fff;
   font-size: 20px;
+  /* center the glyph both ways so the emoji sits in the middle of the disc */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  text-align: center;
 }
 
 .touch-jump { width: 84px; height: 84px; }
 
+/* Left panel becomes a d-pad: up on top, left/right in the middle, down at
+   the bottom (up/down reel the batigarra rope in/out). */
+#controls-left { flex-direction: column; gap: 8px; }
+.dpad-mid { display: flex; gap: 14px; }
+
 /* The batarang is an Act 2 upgrade — no shoot button in Act 1. */
 #btn-shoot { display: none; }
+/* Rope reel buttons only appear once the batigarra is equipped. */
+#btn-up, #btn-down { display: none; }
 
 @media (hover: none) and (pointer: coarse) {
   .float-controls { display: flex; }
