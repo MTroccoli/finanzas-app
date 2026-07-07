@@ -79,13 +79,14 @@ function buildLevel(spec) {
     }
   }
 
-  // Gabled-roof houses: a stepped pyramid of solid columns (1-tile steps,
-  // hoppable without the grapple) rising to a 2-tile flat ridge at topRow.
-  // baseRow is the surface the house sits on (street or a plaza rooftop).
+  // Houses: a flat walkable roof (same solid shape as a wall) so collision
+  // and enemy/player movement are exactly as reliable as any other rooftop.
+  // baseRow is the surface the house sits on (street or a plaza rooftop);
+  // the "house-ness" comes entirely from decoration in drawHouses(), not
+  // from the collision shape.
   for (const hs of houses) {
-    for (let i = 0; i < hs.w; i++) {
-      const colTop = hs.topRow + Math.max(0, (hs.w / 2 - 1) - Math.min(i, hs.w - 1 - i));
-      for (let y = colTop; y < hs.baseRow; y++) solid[y][hs.x + i] = true;
+    for (let y = hs.topRow; y < hs.baseRow; y++) {
+      for (let i = 0; i < hs.w; i++) solid[y][hs.x + i] = true;
     }
   }
 
@@ -96,7 +97,7 @@ function buildLevel(spec) {
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
     houses: houses.map(hs => ({
       x: hs.x, w: hs.w, topRow: hs.topRow, baseRow: hs.baseRow,
-      eaveRow: hs.topRow + hs.w / 2 - 1,
+      style: hs.style || 'brownstone',
     })),
     bane: bane ? {
       x: bane.x * TILE, y: groundY * TILE - 44,
@@ -170,14 +171,14 @@ const LEVEL_SPECS = [
     ],
     // One building blocks the street — climb it with the lamppost above.
     walls: [{ x: 30, w: 3, topRow: 18 }],
-    // A gabled-roof house sits on the street further on: hop up its stepped
-    // roof (1-tile steps) and over the ridge, where a thug patrols.
-    houses: [{ x: 54, w: 6, topRow: 20, baseRow: 24 }],
+    // A house sits on the street further on: a flat roof 3 tiles up (hoppable
+    // without the grapple), where a thug patrols.
+    houses: [{ x: 54, w: 6, topRow: 21, baseRow: 24, style: 'brownstone' }],
     swingPoints: [[31, 16], [49, 16]],
     coins: [
       [9, 20], [39, 20], [67, 20],
       [30, 17], [31, 17], [32, 17],
-      [56, 19], [57, 19],
+      [56, 20], [57, 20],
       [14, 23], [24, 23], [43, 23], [72, 23],
     ],
     thugs: [
@@ -185,7 +186,7 @@ const LEVEL_SPECS = [
       { x: 24, y: 24, range: [22, 29] },
       { x: 30, y: 18, range: [30, 32] },
       { x: 40, y: 24, range: [36, 44] },
-      { x: 56, y: 20, range: [54, 59] },
+      { x: 56, y: 21, range: [54, 59] },
       { x: 62, y: 24, range: [61, 66] },
     ],
     birds: [
@@ -216,7 +217,7 @@ const LEVEL_SPECS = [
       { x: 86, w: 3, topRow: 22 },  // final rooftop with the exit
     ],
     // A gabled-roof house crowns the high plaza — cross it over the ridge.
-    houses: [{ x: 34, w: 6, topRow: 10, baseRow: 13 }],
+    houses: [{ x: 34, w: 6, topRow: 10, baseRow: 13, style: 'terrace' }],
     swingPoints: [[25, 20], [33, 11], [73, 20], [87, 20]],
     coins: [
       [25, 21],
@@ -260,7 +261,7 @@ const LEVEL_SPECS = [
       { x: 48, w: 8, topRow: 16 },   // step down, contiguous walk-off
       { x: 56, w: 8, topRow: 10 },   // tower 4: the summit — the exit
     ],
-    houses: [{ x: 40, w: 6, topRow: 11, baseRow: 14 }],
+    houses: [{ x: 40, w: 6, topRow: 11, baseRow: 14, style: 'brownstone' }],
     swingPoints: [[31, 24], [35, 18], [39, 12], [57, 8]],
     coins: [
       [9, 28], [21, 28],
@@ -417,6 +418,12 @@ let frameTime = 0;
 let currentPowerState = 'small'; // small | big | batarang — carries over between levels, resets on death
 let batarangs = [];
 let grappleCooldownUntil = 0;
+let shakeStart = 0;
+let shakeUntil = 0;
+let shakeDuration = 0;
+let shakeMag = 0;
+let impactFlashes = []; // Bane's landing shockwave: quick bright rings + ground debris
+let dustParticles = [];
 
 function newPlayer(spawn, powerState = 'small') {
   const size = SIZES[powerState];
@@ -617,6 +624,9 @@ function loadLevel(idx) {
   timeAccum = 0;
   batarangs = [];
   grappleCooldownUntil = 0;
+  dustParticles = [];
+  impactFlashes = [];
+  shakeUntil = 0;
   hud.level.textContent = level.name;
 }
 
@@ -712,19 +722,6 @@ function moveAndCollide(p, dt) {
     else if (p.vy < 0) { p.y = tileBottom; }
     p.vy = 0;
   }
-
-  // If on a triangular roof, adjust position to follow the slope
-  if (p.onGround) {
-    const pTileX = Math.floor(p.x / TILE) + Math.floor(p.w / TILE / 2);
-    const hs = houseAt(pTileX);
-    if (hs) {
-      const roofH = getRoofHeightAtX(hs, pTileX);
-      if (roofH !== null) {
-        const targetY = roofH * TILE - p.h;
-        if (Math.abs(targetY - p.y) < 5) p.y = targetY;
-      }
-    }
-  }
 }
 
 // ---------------------------------------------------------------
@@ -818,6 +815,47 @@ function showOverlay(title, msg, btnLabel) {
   overlay.classList.remove('hidden');
 }
 
+function triggerScreenShake(now, mag, durationMs) {
+  shakeStart = now;
+  shakeUntil = now + durationMs;
+  shakeDuration = durationMs;
+  shakeMag = mag;
+}
+
+function currentShakeOffset(now) {
+  if (now >= shakeUntil) return { x: 0, y: 0 };
+  const p = 1 - (now - shakeStart) / shakeDuration; // 1 -> 0 over the shake's life
+  const m = shakeMag * p;
+  return { x: (Math.random() * 2 - 1) * m, y: (Math.random() * 2 - 1) * m };
+}
+
+function spawnLandingImpact(now, x, y) {
+  impactFlashes.push({ x, y, born: now });
+  const n = 14;
+  for (let i = 0; i < n; i++) {
+    const ang = Math.PI + (i / (n - 1)) * Math.PI; // fan out along the ground, upward-ish
+    const speed = 2.5 + Math.random() * 3.5;
+    dustParticles.push({
+      x, y,
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed - 1.5,
+      life: 400 + Math.random() * 300,
+      born: now,
+      size: 3 + Math.random() * 4,
+    });
+  }
+}
+
+function updateImpactEffects(dt, now) {
+  for (const p of dustParticles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 0.25 * dt;
+  }
+  dustParticles = dustParticles.filter(p => now - p.born < p.life);
+  impactFlashes = impactFlashes.filter(f => now - f.born < 350);
+}
+
 // ---------------------------------------------------------------
 // Bane (Act 1 boss)
 // ---------------------------------------------------------------
@@ -873,8 +911,12 @@ function updateBane(dt, now) {
       bn.state = 'fight';
       bn.waveAt = now + (bn.hp <= 2 ? 4200 : 6200);
       level.waves.push({ x: bn.x + bn.w / 2, r: 26, hit: false });
+      triggerScreenShake(now, 7, 260);
+      spawnLandingImpact(now, bn.x + bn.w / 2, floorY);
     }
   }
+
+  updateImpactEffects(dt, now);
 
   // shockwaves race along the floor; only players standing at street level
   // get hit — a gargoyle perch or a jump clears them
@@ -1009,16 +1051,6 @@ function updatePlaying(dt) {
     g.x += g.vx * dt;
     if (g.x < g.minX) { g.x = g.minX; g.vx = Math.abs(g.vx); }
     if (g.x + g.w > g.maxX) { g.x = g.maxX - g.w; g.vx = -Math.abs(g.vx); }
-
-    // If on a triangular roof, move diagonally following the slope
-    const gTileX = Math.floor(g.x / TILE);
-    const hs = houseAt(gTileX);
-    if (hs) {
-      const roofH = getRoofHeightAtX(hs, gTileX);
-      if (roofH !== null) {
-        g.y = roofH * TILE - g.h;
-      }
-    }
 
     if (aabbOverlap(player, g)) {
       const stomped = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
@@ -1493,20 +1525,115 @@ function drawRooftopProps() {
   }
 }
 
-// Gabled ("2 aguas") houses: brick facade, stepped shingled roof slopes
-// meeting at a flat ridge, attic window, chimney with drifting smoke.
-// Helper: get roof height at a given x position (used for diagonal enemy movement)
-function getRoofHeightAtX(hs, x) {
-  if (x < hs.x || x >= hs.x + hs.w) return null;
-  const xRel = x - hs.x;
-  const mid = hs.w / 2;
-  let height;
-  if (xRel < mid) {
-    height = hs.topRow + (xRel / mid) * (hs.eaveRow - hs.topRow);
-  } else {
-    height = hs.topRow + ((hs.w - 1 - xRel) / mid) * (hs.eaveRow - hs.topRow);
+// Houses: flat, fully-reliable walkable roof (same collision as a wall) —
+// the "house-ness" is purely decorative so it never fights the physics.
+// Two alternating facades, picked per-house via hs.style:
+//   'brownstone' — stone cornice ledge + a small triangular pediment prop
+//   'terrace'    — tar-paper roof stripes + a roof-access shed
+function drawHouseFacade(hs, x0, wpx, roofY, baseY) {
+  ctx.fillStyle = '#4a3a30';
+  ctx.fillRect(x0, roofY, wpx, baseY - roofY);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1;
+  for (let y = roofY + 11 + 8; y < baseY; y += 11) {
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + wpx, y); ctx.stroke();
   }
-  return height;
+}
+
+function drawBrownstoneRoof(hs, t, x0, wpx, roofY) {
+  // arched lit windows on the facade
+  for (let k = 0; k < 2; k++) {
+    const wx = x0 + wpx * (0.22 + k * 0.45);
+    const wy = roofY + 16;
+    ctx.fillStyle = hash01(hs.x + k * 7) > 0.35 ? '#ffcf6b' : '#1c2438';
+    ctx.beginPath();
+    ctx.moveTo(wx, wy + 18); ctx.lineTo(wx, wy + 7);
+    ctx.arc(wx + 6.5, wy + 7, 6.5, Math.PI, 0);
+    ctx.lineTo(wx + 13, wy + 18);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#241f1a'; ctx.stroke();
+  }
+
+  // flat walkable gravel roof
+  ctx.fillStyle = '#6b7280';
+  ctx.fillRect(x0, roofY, wpx, 9);
+  ctx.fillStyle = '#8b90a0';
+  ctx.fillRect(x0, roofY, wpx, 3);
+
+  // stone cornice ledge overhanging the facade, with dentil molding
+  ctx.fillStyle = '#8a7a68';
+  ctx.fillRect(x0 - 6, roofY + 6, wpx + 12, 6);
+  ctx.fillStyle = '#5f5346';
+  ctx.fillRect(x0 - 6, roofY + 12, wpx + 12, 3);
+  ctx.fillStyle = '#463c34';
+  for (let i = 0; i < wpx + 12; i += 10) ctx.fillRect(x0 - 6 + i, roofY + 15, 5, 4);
+
+  // centered triangular pediment ornament — purely decorative, sits on
+  // the flat roof, doesn't extend the walkable area. Warm stone tones
+  // (matching the cornice) instead of blue-gray, which used to blend
+  // straight into the night sky and become nearly invisible.
+  const cxm = x0 + wpx / 2;
+  ctx.fillStyle = '#8a7a68';
+  ctx.beginPath();
+  ctx.moveTo(cxm - 26, roofY);
+  ctx.lineTo(cxm + 26, roofY);
+  ctx.lineTo(cxm, roofY - 20);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#463c34'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#ffcf6b';
+  ctx.beginPath(); ctx.arc(cxm, roofY - 8, 3.5, 0, Math.PI * 2); ctx.fill();
+
+  // chimney beside the pediment with drifting smoke
+  const chx = x0 + wpx * 0.75;
+  drawChimney(chx, roofY, t, hs.x);
+}
+
+function drawTerraceRoof(hs, t, x0, wpx, roofY) {
+  // rectangular lit windows on the facade
+  for (let k = 0; k < 2; k++) {
+    const wx = x0 + wpx * (0.22 + k * 0.45);
+    ctx.fillStyle = hash01(hs.x + k * 7) > 0.35 ? '#ffcf6b' : '#1c2438';
+    ctx.fillRect(wx, roofY + 9, 13, 16);
+    ctx.strokeStyle = '#241f1a';
+    ctx.strokeRect(wx, roofY + 9, 13, 16);
+  }
+
+  // flat tar-paper roof: alternating stripes read as a distinct rooftop
+  // material from a tower's plain gravel cap
+  const rh = 11;
+  for (let i = 0; i < wpx; i += 16) {
+    ctx.fillStyle = (i / 16) % 2 === 0 ? '#5a4a3c' : '#6b584a';
+    ctx.fillRect(x0 + i, roofY, Math.min(16, wpx - i), rh);
+  }
+  ctx.fillStyle = '#8b7a68';
+  ctx.fillRect(x0, roofY, wpx, 2.5);
+  ctx.fillStyle = '#3a3128';
+  ctx.fillRect(x0 - 4, roofY - 4, wpx + 8, 5);
+
+  // roof-access shed: a small door-fronted box that reads as "you're on
+  // top of a house", not just a generic platform
+  const shedX = x0 + wpx * 0.15;
+  ctx.fillStyle = '#463c34';
+  ctx.fillRect(shedX, roofY - 22, 26, 22);
+  ctx.fillStyle = '#241f1a';
+  ctx.fillRect(shedX + 9, roofY - 14, 8, 14);
+  ctx.fillStyle = '#6b7280';
+  ctx.fillRect(shedX, roofY - 24, 26, 3);
+
+  // chimney with drifting smoke
+  const chx = x0 + wpx * 0.7;
+  drawChimney(chx, roofY, t, hs.x);
+}
+
+function drawChimney(chx, roofY, t, seed) {
+  ctx.fillStyle = '#3a3128';
+  ctx.fillRect(chx, roofY - 20, 13, 20);
+  ctx.fillStyle = '#241f1a';
+  ctx.fillRect(chx - 2, roofY - 24, 17, 5);
+  ctx.fillStyle = 'rgba(200,210,235,0.13)';
+  const puff = (t / 900 + seed) % 1;
+  ctx.beginPath(); ctx.ellipse(chx + 8 + puff * 8, roofY - 34 - puff * 14, 8 + puff * 5, 5 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(chx + 14 + puff * 12, roofY - 48 - puff * 18, 10 + puff * 6, 6 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawHouses(t) {
@@ -1514,76 +1641,12 @@ function drawHouses(t) {
     const x0 = hs.x * TILE - camera.x;
     const wpx = hs.w * TILE;
     if (x0 + wpx < -40 || x0 > CANVAS_W + 40) continue;
-    const eaveY = (hs.eaveRow + 1) * TILE - camera.y;
+    const roofY = hs.topRow * TILE - camera.y;
     const baseY = hs.baseRow * TILE - camera.y;
-    const ridgeY = hs.topRow * TILE - camera.y;
 
-    // brick facade
-    ctx.fillStyle = '#4a3a30';
-    ctx.fillRect(x0, eaveY, wpx, baseY - eaveY);
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = 1;
-    for (let y = eaveY + 11; y < baseY; y += 11) {
-      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + wpx, y); ctx.stroke();
-    }
-    // lit windows on the facade
-    if (baseY - eaveY >= 30) {
-      for (let k = 0; k < 2; k++) {
-        const wx = x0 + wpx * (0.22 + k * 0.45);
-        ctx.fillStyle = hash01(hs.x + k * 7) > 0.35 ? '#ffcf6b' : '#1c2438';
-        ctx.fillRect(wx, eaveY + 9, 13, 16);
-        ctx.strokeStyle = '#241f1a';
-        ctx.strokeRect(wx, eaveY + 9, 13, 16);
-      }
-    }
-
-    // pure triangular roof
-    const leftX = x0;
-    const rightX = x0 + wpx;
-    const midX = x0 + wpx / 2;
-    ctx.fillStyle = '#664433';
-    ctx.beginPath();
-    ctx.moveTo(leftX, eaveY);
-    ctx.lineTo(rightX, eaveY);
-    ctx.lineTo(midX, ridgeY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#3a2a22';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // roof slope highlights
-    ctx.strokeStyle = 'rgba(180,150,120,0.3)';
-    ctx.lineWidth = 1;
-    for (let i = 1; i < hs.w * 2; i++) {
-      const xPos = leftX + (rightX - leftX) * (i / (hs.w * 2));
-      const yPos = eaveY + (ridgeY - eaveY) * Math.abs((i / (hs.w * 2)) - 0.5) * 2;
-      ctx.beginPath();
-      if (i < hs.w) {
-        const nextX = leftX + (rightX - leftX) * ((i + 0.5) / (hs.w * 2));
-        const nextY = eaveY + (ridgeY - eaveY) * Math.abs(((i + 0.5) / (hs.w * 2)) - 0.5) * 2;
-        ctx.moveTo(xPos, yPos);
-        ctx.lineTo(nextX, nextY);
-      }
-      ctx.stroke();
-    }
-
-    // chimney sitting ON the right slope: interpolate along the ridge->eave
-    // line (same one the fill triangle uses) so its base always lands on
-    // the visible roof surface instead of floating at a fixed pixel offset
-    const chSlopeT = 0.6; // 0 = at the ridge, 1 = at the eave
-    const chBaseX = midX + chSlopeT * (rightX - midX);
-    const chBaseY = ridgeY + chSlopeT * (eaveY - ridgeY);
-    const chx = chBaseX - 6.5;
-    const chTop = chBaseY + 6; // embed a few px into the roof for a grounded look
-    ctx.fillStyle = '#3a3128';
-    ctx.fillRect(chx, chTop - 20, 13, 20);
-    ctx.fillStyle = '#241f1a';
-    ctx.fillRect(chx - 2, chTop - 24, 17, 5);
-    ctx.fillStyle = 'rgba(200,210,235,0.13)';
-    const puff = (t / 900 + hs.x) % 1;
-    ctx.beginPath(); ctx.ellipse(chx + 8 + puff * 8, chTop - 34 - puff * 14, 8 + puff * 5, 5 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(chx + 14 + puff * 12, chTop - 48 - puff * 18, 10 + puff * 6, 6 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
+    drawHouseFacade(hs, x0, wpx, roofY, baseY);
+    if (hs.style === 'terrace') drawTerraceRoof(hs, t, x0, wpx, roofY);
+    else drawBrownstoneRoof(hs, t, x0, wpx, roofY);
   }
 }
 
@@ -2327,6 +2390,35 @@ function drawShockwaves() {
   }
 }
 
+// Bane's landing: a quick bright burst at the impact point plus flying
+// debris, layered on top of the slower-moving shockwave rings.
+function drawImpactEffects(now) {
+  for (const f of impactFlashes) {
+    const age = (now - f.born) / 350;
+    if (age >= 1) continue;
+    const px = f.x - camera.x, py = f.y - camera.y;
+    const r = 10 + age * 60;
+    ctx.strokeStyle = `rgba(255,230,180,${0.8 * (1 - age)})`;
+    ctx.lineWidth = 5 * (1 - age) + 1;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - age)})`;
+    ctx.beginPath();
+    ctx.arc(px, py, Math.max(0, 14 * (1 - age)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const p of dustParticles) {
+    const age = (now - p.born) / p.life;
+    if (age >= 1) continue;
+    const px = p.x - camera.x, py = p.y - camera.y;
+    ctx.fillStyle = `rgba(120,110,100,${0.6 * (1 - age)})`;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size * (1 - age * 0.5), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // ---------------------------------------------------------------
 // Intro cutscene (animated): Dos Caras throws a tied-up Robin into his
 // van and speeds off into the night while Batman gives chase.
@@ -2714,6 +2806,13 @@ function drawHeroMessage() {
 }
 
 function render(t) {
+  // Bane's landing gives the whole view a brief jolt; restored at the end
+  // of the frame so it never leaks into the persistent camera position.
+  const origCamX = camera.x, origCamY = camera.y;
+  const shake = currentShakeOffset(t);
+  camera.x += shake.x;
+  camera.y += shake.y;
+
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
@@ -2731,8 +2830,12 @@ function render(t) {
   drawVillain();
   drawBane(t);
   drawShockwaves();
+  drawImpactEffects(t);
   drawPlayer();
   drawHeroMessage();
+
+  camera.x = origCamX;
+  camera.y = origCamY;
 
   if (state === 'levelcomplete') {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
