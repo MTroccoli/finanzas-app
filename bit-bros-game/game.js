@@ -173,7 +173,7 @@ const LEVEL_SPECS = [
     // A gabled-roof house sits on the street further on: hop up its stepped
     // roof (1-tile steps) and over the ridge, where a thug patrols.
     houses: [{ x: 54, w: 6, topRow: 20, baseRow: 24 }],
-    swingPoints: [[31, 16], [49, 16]],
+    swingPoints: [[31, 14], [49, 16]],
     coins: [
       [9, 20], [39, 20], [67, 20],
       [30, 17], [31, 17], [32, 17],

@@ -138,8 +138,8 @@ canvas {
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
-  width: 56px;
-  height: 56px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.35);
   background: rgba(20, 25, 45, 0.45);
@@ -147,7 +147,7 @@ canvas {
   font-size: 20px;
 }
 
-.touch-jump { width: 68px; height: 68px; }
+.touch-jump { width: 84px; height: 84px; }
 
 /* The batarang is an Act 2 upgrade — no shoot button in Act 1. */
 #btn-shoot { display: none; }
