@@ -1,4 +1,4 @@
-# Bit Bros — Plan del Acto 2
+# Bat Bros — Plan del Acto 2
 
 > Documento de diseño. Nada aquí está implementado todavía. Sirve como
 > checklist para construir el Acto 2 por fases.

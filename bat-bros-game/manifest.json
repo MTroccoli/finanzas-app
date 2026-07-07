@@ -1,6 +1,6 @@
 {
-  "name": "Bit Bros — Gotham Nights",
-  "short_name": "Bit Bros",
+  "name": "Bat Bros — Gotham Nights",
+  "short_name": "Bat Bros",
   "description": "Platformer de Batman en Gotham de noche: balanceate entre postes de luz, tirá batarangs y derrotá al villano.",
   "start_url": "./index.html",
   "scope": "./",

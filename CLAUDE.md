@@ -1,10 +1,10 @@
-# Bit Bros — Game Architecture Guide
+# Bat Bros — Game Architecture Guide
 
 A Batman platformer built in pure Canvas 2D with custom physics, no external game engines. 60fps deterministic gameplay verified through monkeypatched clock testing.
 
 ## Project Overview
 
-**Bit Bros** is a vertical-city rooftop platformer featuring Batman traversing Gotham's streets and buildings, defeating thugs and birds, collecting coins, and facing off against the supervillain Bane in an indoor boss arena.
+**Bat Bros** is a vertical-city rooftop platformer featuring Batman traversing Gotham's streets and buildings, defeating thugs and birds, collecting coins, and facing off against the supervillain Bane in an indoor boss arena.
 
 - **Engine**: Canvas 2D, custom physics (no Phaser, Kaboom, or similar)
 - **Architecture**: Single-file game logic (game.js ~2700 lines) + styling + HTML markup
@@ -33,7 +33,7 @@ This workflow keeps the game in a constantly deployable state and maintains a cl
 
 ### Core Game Files
 
-#### `bit-bros-game/game.js` (~2700 lines)
+#### `bat-bros-game/game.js` (~2700 lines)
 The heart of the game. Contains:
 - **Constants** (lines 1-50): gravity, jump velocity, move speed, grapple range, etc.
 - **`buildLevel(spec)`** (lines 56-150): Converts LEVEL_SPECS definitions into collision grids and entity lists
@@ -44,27 +44,27 @@ The heart of the game. Contains:
 - **Boss system** (drawBane, updateBane): Bane state machine, shockwave generation, attack telegraph
 - **Input handling** (handleKeyDown/Up, touchStart/End): Keyboard + touch control dispatch
 
-#### `bit-bros-game/index.html`
+#### `bat-bros-game/index.html`
 - Canvas element and HUD container
 - Overlay system (intro, game over, level complete)
 - Touch control buttons (left/right movement, shoot, jump)
 - Manifest link for PWA
 
-#### `bit-bros-game/style.css`
+#### `bat-bros-game/style.css`
 - Canvas styling and responsive layout
 - Touch control floating buttons (70px and 84px circles as of latest update)
 - Overlay box styling with intro text and start button
 - Landscape/portrait orientation handling
 - HUD styling (lives, coins, level display)
 
-#### `bit-bros-game/sw.js`
+#### `bat-bros-game/sw.js`
 Service worker implementing a **network-first cache strategy**:
 - Install: cache all assets (index.html, style.css, game.js, manifest, icons)
 - Fetch: try network first, cache fallback
 - Activate: clean up old caches
 - Enables offline play once assets are cached
 
-#### `bit-bros-game/manifest.json`
+#### `bat-bros-game/manifest.json`
 PWA manifest: app name, icons, display mode, theme colors
 
 ---
@@ -367,7 +367,7 @@ Currently: No audio. To add:
 ## File Manifest
 
 ```
-bit-bros-game/
+bat-bros-game/
   ├── game.js              # Main game logic, physics, levels
   ├── index.html           # Canvas, controls, overlay markup
   ├── style.css            # Styling, touch control layout, responsive design

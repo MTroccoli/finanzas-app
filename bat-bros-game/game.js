@@ -1,5 +1,5 @@
 /* ============================================================
-   BIT BROS — platformer de Gotham en Canvas 2D, sin dependencias.
+   BAT BROS — platformer de Gotham en Canvas 2D, sin dependencias.
    ============================================================ */
 
 const TILE = 32;
@@ -111,12 +111,13 @@ function buildLevel(spec) {
       style: hs.style || 'brownstone',
     })),
     bane: bane ? {
-      x: bane.x * TILE, y: groundY * TILE - 44,
+      x: bane.x * TILE, homeX: bane.x * TILE, y: groundY * TILE - 44,
       w: 30, h: 44,           // small until he presses the venom button
       state: 'idle',          // idle | growing | fight | telegraph | jumping
       hp: bane.hp ?? 5, maxHp: bane.hp ?? 5,
       vx: 1.3, vy: 0,
       alive: true,
+      walkPhase: 0, nextTurnAt: 0,
       growStart: 0, teleStart: 0, waveAt: 0, hitUntil: 0, deadAt: 0,
       minX: 3 * TILE, maxX: (width - 4) * TILE,
     } : null,
@@ -358,14 +359,14 @@ const LEVEL_SPECS = [
       { x: 21, w: 2, y: 6 },
     ],
     walls: [],
-    // ceiling hooks above each gargoyle — jump under one and the rope
-    // reels Batman up onto the perch
-    swingPoints: [[11, 4], [22, 4]],
+    // ceiling hooks above each gargoyle, plus a central one between them so
+    // Batman can swing from gargoyle to gargoyle over Bane's head
+    swingPoints: [[11, 4], [16, 4], [22, 4]],
     coins: [],
     thugs: [],
     birds: [],
     bats: [],
-    bane: { x: 26, hp: 5 },
+    bane: { x: 15, hp: 5 },   // starts centered between the two gargoyles
     spawn: { x: 2, y: 11 },
   },
   {
@@ -381,25 +382,25 @@ const LEVEL_SPECS = [
       penny: 57,
       trex: 65,
       door: 73,
-      plateauRow: 7,
+      plateauRow: 9,   // the plateau sits lower now, so the ceiling reads high
       batTiles: [5, 9, 14, 19, 22, 35, 48, 55, 68],
       dropTiles: [7, 16, 45, 60],
     },
     width: 76, height: 15, groundY: 13,
     pits: [],
     platforms: [],
-    // the ascent: solid rock terraces (2-tile rises, all jumpable)
+    // the ascent: solid rock terraces (2-tile rises, all jumpable), rising to
+    // a plateau at row 9 — low enough that the cavern roof stays high overhead
     walls: [
-      { x: 25, w: 3, topRow: 11 },
-      { x: 28, w: 3, topRow: 9 },
-      { x: 31, w: 45, topRow: 7 },
+      { x: 24, w: 4, topRow: 11 },
+      { x: 28, w: 48, topRow: 9 },
     ],
     houses: [],
-    swingPoints: [],
+    // two ceiling hooks over the plateau to test the new weapon / the swing
+    swingPoints: [[44, 3], [50, 3]],
     coins: [
       [6, 12], [12, 12], [18, 12],
-      [26, 10], [29, 8],
-      [34, 6], [46, 6], [52, 6],
+      [25, 10], [34, 8], [46, 8], [52, 8],
     ],
     thugs: [],
     birds: [],
@@ -879,7 +880,13 @@ async function submitName() {
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
 
-  menuGreet.textContent = `Hola, ${name}.`;
+  showChoiceMenu();
+}
+
+// Show the New game / Continue chooser, with the Continue button reflecting
+// the furthest level reached. Reused by the name flow and by game over.
+function showChoiceMenu(greet) {
+  menuGreet.textContent = greet || (playerName ? `Hola, ${playerName}.` : '');
   const hasProgress = savedMaxLevel > 0;
   btnContinue.disabled = !hasProgress;
   if (hasProgress) {
@@ -889,6 +896,8 @@ async function submitName() {
     btnContinue.textContent = 'CONTINUAR (sin progreso)';
   }
   showMenuSection('choice');
+  overlay.classList.remove('hidden');
+  state = 'start';
 }
 
 btnNameOk.addEventListener('click', submitName);
@@ -1021,7 +1030,8 @@ function killPlayer() {
         `USAR ${CONTINUE_COST} MONEDAS`);
       return;
     }
-    showOverlay('GAME OVER', `Puntaje final: ${score}. Presioná R o el botón para reintentar.`, 'REINTENTAR');
+    // back to the menu: pick a new game or continue at the last level reached
+    showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
     return;
   }
   currentPowerState = 'small';
@@ -1032,7 +1042,7 @@ function killPlayer() {
   // reset the boss fight positions (Bane keeps the damage already dealt)
   if (level.bane && level.bane.alive) {
     const bn = level.bane;
-    bn.x = 26 * TILE;
+    bn.x = bn.homeX;
     bn.vy = 0;
     bn.y = level.groundY * TILE - bn.h;
     if (bn.state !== 'idle') { bn.state = 'fight'; bn.waveAt = performance.now() + 4000; }
@@ -1176,9 +1186,19 @@ function updateBane(dt, now) {
     }
   } else if (bn.state === 'fight') {
     const speed = bn.hp <= 2 ? 2.3 : 1.3; // 3rd hit taken -> he gets faster
+    // erratic stalking: random direction flips + occasional lunges toward
+    // Batman, so he no longer just paces wall to wall
+    if (now > bn.nextTurnAt) {
+      const towardPlayer = (player.x + player.w / 2) < (bn.x + bn.w / 2) ? -1 : 1;
+      bn.vx = (Math.random() < 0.55 ? towardPlayer : (Math.random() < 0.5 ? -1 : 1)) *
+              (0.8 + Math.random() * 0.9);
+      bn.nextTurnAt = now + 400 + Math.random() * 1100;
+    }
     bn.x += bn.vx * speed * dt;
+    bn.walkPhase += Math.abs(bn.vx * speed) * dt;
     if (bn.x < bn.minX) { bn.x = bn.minX; bn.vx = Math.abs(bn.vx); }
     if (bn.x + bn.w > bn.maxX) { bn.x = bn.maxX - bn.w; bn.vx = -Math.abs(bn.vx); }
+    if (Math.abs(bn.vx) > 0.1) bn.facing = bn.vx > 0 ? 1 : -1;
     if (now > bn.waveAt) {
       bn.state = 'telegraph';
       bn.teleStart = now;
@@ -2433,15 +2453,15 @@ function drawSwingPoints(t) {
     const px = sp.x - camera.x;
     if (px < -30 || px > CANVAS_W + 30) continue;
     const ay = sp.y - camera.y;
-    if (level.indoor) {
-      // warehouse: a glowing grapple hook chained to the roof truss
-      ctx.strokeStyle = '#4a4136';
+    if (level.indoor || level.cave) {
+      // warehouse / cave: a glowing grapple hook chained to the roof
+      ctx.strokeStyle = level.cave ? '#2a3350' : '#4a4136';
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(px, 40 - camera.y);
       ctx.lineTo(px, ay);
       ctx.stroke();
-      ctx.fillStyle = '#2f2721';
+      ctx.fillStyle = level.cave ? '#1b2338' : '#2f2721';
       ctx.fillRect(px - 9, 36 - camera.y, 18, 6);
       const hookGlow = 0.6 + 0.4 * Math.abs(Math.sin(t / 500 + sp.x));
       const hg = ctx.createRadialGradient(px, ay, 2, px, ay, 22);
@@ -3016,16 +3036,24 @@ function drawBane(t) {
   const scale = bh / BANE_BIG.h;
   const skin = '#c9a17a', skinShade = '#a67f5c', skinHi = '#e0bd94';
 
-  // legs: dark cargo pants + knee pads + boots
+  // legs: dark cargo pants + knee pads + boots. While he stalks (fight),
+  // the two legs stride out of phase and the trailing boot lifts, so his
+  // feet visibly move as he walks.
+  const walking = bn.state === 'fight';
+  const ph = bn.walkPhase * 0.05;
+  const strideL = walking ? Math.sin(ph) * bw * 0.06 : 0;
+  const strideR = walking ? Math.sin(ph + Math.PI) * bw * 0.06 : 0;
+  const liftL = walking ? Math.max(0, Math.sin(ph)) * bh * 0.05 : 0;
+  const liftR = walking ? Math.max(0, Math.sin(ph + Math.PI)) * bh * 0.05 : 0;
   ctx.fillStyle = '#23262e';
-  ctx.fillRect(px + bw * 0.10, py + bh * 0.60, bw * 0.34, bh * 0.40);
-  ctx.fillRect(px + bw * 0.56, py + bh * 0.60, bw * 0.34, bh * 0.40);
+  ctx.fillRect(px + bw * 0.10 + strideL, py + bh * 0.60 - liftL, bw * 0.34, bh * 0.40);
+  ctx.fillRect(px + bw * 0.56 + strideR, py + bh * 0.60 - liftR, bw * 0.34, bh * 0.40);
   ctx.fillStyle = '#33373f';
-  ctx.fillRect(px + bw * 0.10, py + bh * 0.74, bw * 0.34, bh * 0.07);
-  ctx.fillRect(px + bw * 0.56, py + bh * 0.74, bw * 0.34, bh * 0.07);
+  ctx.fillRect(px + bw * 0.10 + strideL, py + bh * 0.74 - liftL, bw * 0.34, bh * 0.07);
+  ctx.fillRect(px + bw * 0.56 + strideR, py + bh * 0.74 - liftR, bw * 0.34, bh * 0.07);
   ctx.fillStyle = '#101216';
-  ctx.fillRect(px + bw * 0.06, py + bh * 0.94, bw * 0.40, bh * 0.06);
-  ctx.fillRect(px + bw * 0.54, py + bh * 0.94, bw * 0.40, bh * 0.06);
+  ctx.fillRect(px + bw * 0.06 + strideL, py + bh * 0.94 - liftL, bw * 0.40, bh * 0.06);
+  ctx.fillRect(px + bw * 0.54 + strideR, py + bh * 0.94 - liftR, bw * 0.40, bh * 0.06);
 
   // torso: tan chest, shaded pecs, black tank top, belt
   ctx.fillStyle = skin;
