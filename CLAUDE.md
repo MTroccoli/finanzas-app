@@ -7,9 +7,9 @@ A Batman platformer built in pure Canvas 2D with custom physics, no external gam
 **Bat Bros** is a vertical-city rooftop platformer featuring Batman traversing Gotham's streets and buildings, defeating thugs and birds, collecting coins, and facing off against the supervillain Bane in an indoor boss arena.
 
 - **Engine**: Canvas 2D, custom physics (no Phaser, Kaboom, or similar)
-- **Architecture**: Single-file game logic (game.js ~2700 lines) + styling + HTML markup
+- **Architecture**: Three-file split — `catalog.js` (constants + level builder), `levels.js` (LEVEL_SPECS data), `game.js` (engine ~3800 lines) + styling + HTML markup
 - **Physics**: Custom gravity, friction, pendulum swing mechanics, stomp bounce detection
-- **Levels**: 4 programmatically generated levels (Act 1) defined in `LEVEL_SPECS` array
+- **Levels**: 6 programmatically generated levels (Acts 1-2 + Batcave) defined in `levels.js`
 - **Testing**: Deterministic bots using monkeypatched `performance.now()` and `Date.now()`
 - **Offline**: Progressive Web App (PWA) with service worker for offline play
 
@@ -33,16 +33,27 @@ This workflow keeps the game in a constantly deployable state and maintains a cl
 
 ### Core Game Files
 
-#### `bat-bros-game/game.js` (~2700 lines)
-The heart of the game. Contains:
-- **Constants** (lines 1-50): gravity, jump velocity, move speed, grapple range, etc.
-- **`buildLevel(spec)`** (lines 56-150): Converts LEVEL_SPECS definitions into collision grids and entity lists
-- **`LEVEL_SPECS` array** (lines 160-462): Declarative level definitions (width, height, platforms, walls, houses, swingPoints, enemies, coins)
+#### `bat-bros-game/catalog.js` (~200 lines)
+Game rules and constants:
+- **All constants**: TILE, GRAVITY, JUMP_VELOCITY, GRAPPLE_RANGE, SIZES, etc.
+- **`hash01(n)`**: Deterministic sin-based hash used by level builder and rendering
+- **`buildLevel(spec)`**: Converts LEVEL_SPECS definitions into collision grids and entity lists
+- **`buildCaveState()`**: Batcave-specific state (stalactites, ambient bats, drip columns)
+
+#### `bat-bros-game/levels.js` (~220 lines)
+Level data only:
+- **`LEVEL_SPECS` array**: Declarative level definitions (geometry, enemies, coins, swing points)
+- **`BOSS_LEVEL_INDEX`**: Index of the Bane boss level
+
+#### `bat-bros-game/game.js` (~3800 lines)
+Game engine (runtime logic):
 - **`updatePlaying(dt)`**: Main game loop; handles input, physics, collision, enemy AI, player animation
 - **`render()`**: Canvas drawing pipeline for terrain, entities, HUD, overlays
 - **Swing/grapple system** (tryAttachGrapple, updateSwinging): Rope mechanics with ascent-only latch behavior
 - **Boss system** (drawBane, updateBane): Bane state machine, shockwave generation, attack telegraph
 - **Input handling** (handleKeyDown/Up, touchStart/End): Keyboard + touch control dispatch
+- **Supabase persistence**: Player progress, gadget choice, game overs
+- **Batcave UI**: Expediente screen, weapon choice, level select
 
 #### `bat-bros-game/index.html`
 - Canvas element and HUD container
@@ -324,7 +335,7 @@ Tests launch Playwright, navigate to `http://localhost:8810/index.html`, and exe
 
 ### Adding a New Level
 
-1. **Create a LEVEL_SPECS entry** in `game.js` (around line 160)
+1. **Create a LEVEL_SPECS entry** in `levels.js`
 2. **Define geometry**: width, height, groundY, pits, platforms, walls, houses
 3. **Place swing anchors**: Use the 6-tile-height formula for wall climbs
 4. **Spawn enemies**: thugs, birds, bats with patrol ranges
@@ -349,7 +360,7 @@ Tests launch Playwright, navigate to `http://localhost:8810/index.html`, and exe
 
 ### Modifying Physics
 
-All physics constants are at the top of `game.js` (lines 1-50). Adjusting them changes:
+All physics constants are in `catalog.js`. Adjusting them changes:
 - Jump height: `JUMP_VELOCITY`
 - Fall speed: `GRAVITY`, `MAX_FALL`
 - Movement: `MOVE_ACCEL`, `MAX_SPEED`, `FRICTION`
@@ -368,7 +379,9 @@ Currently: No audio. To add:
 
 ```
 bat-bros-game/
-  ├── game.js              # Main game logic, physics, levels
+  ├── catalog.js           # Constants, physics values, buildLevel(), hash01()
+  ├── levels.js            # LEVEL_SPECS array + BOSS_LEVEL_INDEX
+  ├── game.js              # Game engine: input, physics, rendering, UI
   ├── index.html           # Canvas, controls, overlay markup
   ├── style.css            # Styling, touch control layout, responsive design
   ├── sw.js                # Service worker (offline support)

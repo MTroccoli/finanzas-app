@@ -1,8 +1,10 @@
-const CACHE_NAME = 'bat-bros-v6';
+const CACHE_NAME = 'bat-bros-v7';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
+  './catalog.js',
+  './levels.js',
   './game.js',
   './manifest.json',
   './icon-192.png',
