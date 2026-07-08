@@ -291,7 +291,10 @@ const LEVEL_SPECS = [
     ],
     // A gabled-roof house crowns the high plaza — cross it over the ridge.
     houses: [{ x: 34, w: 6, topRow: 10, baseRow: 13, style: 'terrace' }],
-    swingPoints: [[25, 20], [33, 11], [73, 20], [87, 20]],
+    // [50,20] lets Batman grapple back UP the descent staircase (street ->
+    // wall49 roof, then jump 49->45->41 back to the plaza) so he can return to
+    // finish off skipped enemies instead of being stranded on the street.
+    swingPoints: [[25, 20], [33, 11], [50, 20], [73, 20], [87, 20]],
     coins: [
       [25, 21],
       [33, 12], [35, 9], [37, 9], [40, 12],

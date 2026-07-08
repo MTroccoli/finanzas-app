@@ -120,9 +120,16 @@ El contador de game overs por jugador se guarda en la fila del jugador en
 puede alterar el esquema desde el juego, así que hay que crear la columna una
 sola vez en el **SQL Editor** de Supabase:
 
+La tabla usa permisos **por columna** para el rol `anon` (verificado: un
+`select=*` da *permission denied*), así que además de crear la columna hay que
+otorgar los permisos sobre ella al rol `anon`:
+
 ```sql
-alter table bitbros_players
+alter table public.bitbros_players
   add column if not exists game_overs integer not null default 0;
+
+grant select (game_overs), insert (game_overs), update (game_overs)
+  on public.bitbros_players to anon;
 ```
 
 Hasta que exista, el contador funciona igual pero **solo en localStorage** (no
