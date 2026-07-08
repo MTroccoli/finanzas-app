@@ -489,7 +489,6 @@ const LEVEL_SPECS = [
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
-      [19, 16],
       [24, 15], [28, 15],
       [31, 10], [33, 10],
       [38, 15], [42, 15], [48, 15],
@@ -653,8 +652,6 @@ function updateWeaponButton() {
   const garra = currentGadget === 'batigarra';
   btnShoot.style.display = currentGadget ? 'flex' : '';
   btnShoot.textContent = garra ? '🪝' : '🪃';
-  if (btnUp) btnUp.style.display = garra ? 'flex' : '';
-  if (btnDown) btnDown.style.display = garra ? 'flex' : '';
 }
 
 let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover

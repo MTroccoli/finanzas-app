@@ -243,8 +243,6 @@ canvas {
 
 /* The batarang is an Act 2 upgrade — no shoot button in Act 1. */
 #btn-shoot { display: none; }
-/* Rope reel buttons only appear once the batigarra is equipped. */
-#btn-up, #btn-down { display: none; }
 
 @media (hover: none) and (pointer: coarse) {
   .float-controls { display: flex; }
