@@ -452,12 +452,14 @@ const LEVEL_SPECS = [
     // it off.
     // Reachability formula (verified with a frame-stepping bot trying many
     // jump timings): a standing jump's apex lands ~4 tiles above the
-    // takeoff surface and ~3 tiles forward, so every anchor here sits 4
-    // rows above whatever surface Batman jumps from AND stays > 4 tiles
+    // takeoff surface and ~3 tiles forward, so anchors need only sit >4
+    // rows above whatever surface Batman jumps from AND stay > 4 tiles
     // above the pit's floor (i.e. beyond hasCloseFloor's reach in
     // tryAttachGrapple) — that skips the "must be rising" gate entirely,
     // so the hop connects across nearly the whole approach, not just the
-    // instant right before the apex.
+    // instant right before the apex. Anchor1 sits even higher than the
+    // minimum for a bigger swoop; the wider margin only widens its latch
+    // window further.
     name: '2-1',
     dock: true,
     width: 96, height: 20, groundY: 17,
@@ -477,16 +479,17 @@ const LEVEL_SPECS = [
       { x: 30, w: 5, topRow: 11 },  // container tower — climbed via the ladder, not a grapple
     ],
     ladders: [
-      { x: 35, topRow: 11, baseRow: 17 },
+      { x: 29, topRow: 11, baseRow: 17 },  // approach side: climb up from street level
+      { x: 35, topRow: 11, baseRow: 17 },  // far side: climb back down after crossing the roof
     ],
     houses: [],
     swingPoints: [
-      [18, 13],           // crane hook over the first water gap
+      [17, 11],           // crane hook over the first water gap — raised for a bigger swoop
       [54, 13], [67, 13], // two-hop chain over the second, wider gap
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
-      [16, 11], [18, 9], [20, 11],
+      [19, 16],
       [24, 15], [28, 15],
       [31, 10], [33, 10],
       [38, 15], [42, 15], [48, 15],
