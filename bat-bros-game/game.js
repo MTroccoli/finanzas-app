@@ -662,6 +662,7 @@ let playerName = '';       // set from the start menu
 let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = continue)
 let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
 let gameOverCount = 0;     // how many game overs this player has (shown on the Batcave computer)
+let savedGadget = null;    // gadget earned in a previous run (restored on Continue)
 let continueOffer = false; // game over at Bane: offer to spend coins to retry
 let cutsceneStart = 0;
 let levelIndex = 0;
@@ -721,6 +722,7 @@ function setGadget(g) {
   player.gadget = g;
   currentGadget = g;
   updateWeaponButton();
+  if (playerName) saveGadgetChoice(playerName, g);
 }
 
 function spawnBatarang() {
@@ -1005,7 +1007,9 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   currentPowerState = 'small';
-  currentGadget = null;   // a fresh run starts unarmed (earn a gadget in the Batcave)
+  // Continue (startLevelIndex > 0) restores whatever gadget was earned last
+  // run; a brand-new game (index 0) always starts unarmed.
+  currentGadget = startLevelIndex > 0 ? savedGadget : null;
   updateWeaponButton();
   continueOffer = false;
   hud.score.textContent = 0;
@@ -1087,6 +1091,49 @@ function saveProgress(name, level) {
   } catch (e) {}
 }
 
+// --- Earned gadget per player (so Continue restores it instead of sending
+// the player back into Act 2 unarmed). Same merge-duplicates pattern as
+// game_overs, via its own `gadget` column so a missing column degrades to
+// localStorage-only without breaking the level save.
+function localGadgetKey(name) { return 'bitbros:gadget:' + name.trim().toLowerCase(); }
+function localGetGadget(name) {
+  const v = localStorage.getItem(localGadgetKey(name));
+  return v === 'batarang' || v === 'batigarra' ? v : null;
+}
+
+async function loadGadget(name) {
+  const local = localGetGadget(name);
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(
+      `${SUPA_PLAYERS}?name=eq.${encodeURIComponent(name.trim())}&select=gadget`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, signal: ctl.signal });
+    clearTimeout(timer);
+    if (r && r.ok) {
+      const rows = await r.json();
+      const remote = rows.length ? rows[0].gadget : null;
+      return remote === 'batarang' || remote === 'batigarra' ? remote : local;
+    }
+  } catch (e) { /* column missing / offline: fall back to local */ }
+  return local;
+}
+
+function saveGadgetChoice(name, gadget) {
+  try { localStorage.setItem(localGadgetKey(name), gadget || ''); } catch (e) {}
+  try {
+    fetch(`${SUPA_PLAYERS}?on_conflict=name`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({ name: name.trim(), gadget: gadget || null, updated_at: new Date().toISOString() }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // --- Game-over tally per player (shown only on the Batcave computer) ---
 // Stored in the same bitbros_players row via a `game_overs` column. The
 // column must exist in Supabase (see the SQL in ACT2_PLAN.md); if it isn't
@@ -1152,7 +1199,7 @@ async function submitName() {
   localStorage.setItem('bitbros:lastName', name);
   btnNameOk.disabled = true;
   btnNameOk.textContent = 'CARGANDO…';
-  [savedMaxLevel, gameOverCount] = await Promise.all([loadProgress(name), loadGameOvers(name)]);
+  [savedMaxLevel, gameOverCount, savedGadget] = await Promise.all([loadProgress(name), loadGameOvers(name), loadGadget(name)]);
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
 
