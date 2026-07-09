@@ -922,6 +922,7 @@ function killPlayer() {
   lives--;
   hud.lives.textContent = Math.max(lives, 0);
   if (lives <= 0) {
+    if (level.chase) exitChaseMode();
     state = 'gameover';
     // record the game over for this player (shown on the Batcave computer)
     gameOverCount++;
