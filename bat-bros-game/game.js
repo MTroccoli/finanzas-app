@@ -491,9 +491,12 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   currentPowerState = 'small';
-  // Continue (startLevelIndex > 0) restores whatever gadget was earned last
-  // run; a brand-new game (index 0) always starts unarmed.
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
+  // If continuing past the Batcave without a weapon, send back to pick one
+  const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
+  if (startLevelIndex > caveIdx && caveIdx >= 0 && !currentGadget) {
+    startLevelIndex = caveIdx;
+  }
   updateWeaponButton();
   continueOffer = false;
   hud.score.textContent = 0;
