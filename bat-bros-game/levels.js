@@ -192,7 +192,7 @@ const LEVEL_SPECS = [
     // hooks — no fixed rest stop anymore, land on it mid-swing or time a
     // hop onto it while it passes
     boats: [
-      { x: 58, y: 17, w: 3, range: [53, 66], speed: 2.0 },
+      { x: 58, y: 17, w: 3, range: [53, 66], speed: 2.3 },
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
@@ -229,7 +229,8 @@ const LEVEL_SPECS = [
       { x: 22, w: 4, topRow: 15 },
       { x: 30, w: 4, topRow: 13 },
       { x: 38, w: 4, topRow: 13 },
-      { x: 44, w: 3, topRow: 17 },
+      { x: 44, w: 2, topRow: 17 },
+      { x: 47, w: 2, topRow: 13 },
       { x: 72, w: 5, topRow: 15 },
       { x: 102, w: 4, topRow: 15 },
     ],
@@ -240,6 +241,7 @@ const LEVEL_SPECS = [
       { x: 29, topRow: 13, baseRow: 21 },
       { x: 37, topRow: 13, baseRow: 21 },
       { x: 42, topRow: 13, baseRow: 21 },
+      { x: 46, topRow: 13, baseRow: 21 },
       { x: 71, topRow: 15, baseRow: 21 },
       { x: 77, topRow: 15, baseRow: 21 },
       { x: 101, topRow: 15, baseRow: 21 },
@@ -249,7 +251,7 @@ const LEVEL_SPECS = [
       { towerX: 47, armY: 3, armEndX: 58, ropeLen: 11, cargoW: 3, speed: 0.0012, amplitude: 0.45 },
     ],
     boats: [
-      { x: 92, y: 21, w: 3, range: [89, 99], speed: 1.5 },
+      { x: 92, y: 21, w: 3, range: [89, 99], speed: 2.0 },
     ],
     swingPoints: [
       [48, 9], [67, 9],
@@ -267,12 +269,12 @@ const LEVEL_SPECS = [
       { x: 6, y: 21, range: [3, 12] },
       { x: 11, y: 21, range: [9, 13], helmet: true },
       { x: 19, y: 21, range: [18, 21] },
-      { x: 16, y: 15, range: [14, 17], helmet: true },
+      { x: 16, y: 15, range: [13, 18], helmet: true },
       { x: 35, y: 21, range: [34, 37], helmet: true },
-      { x: 32, y: 13, range: [30, 33] },
-      { x: 74, y: 15, range: [72, 76] },
+      { x: 32, y: 13, range: [29, 33] },
+      { x: 74, y: 15, range: [71, 77] },
       { x: 80, y: 21, range: [78, 84], helmet: true },
-      { x: 103, y: 15, range: [102, 105] },
+      { x: 103, y: 15, range: [101, 105] },
       { x: 108, y: 21, range: [106, 111], helmet: true },
     ],
     birds: [
@@ -280,7 +282,7 @@ const LEVEL_SPECS = [
       { x: 58, y: 11, range: [50, 66] },
       { x: 95, y: 14, range: [88, 100] },
     ],
-    bats: [[44, 19]],
+    bats: [[43, 19]],
     spawn: { x: 2, y: 19 },
   },
 ];

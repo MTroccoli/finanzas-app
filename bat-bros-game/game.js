@@ -310,11 +310,20 @@ function tryGrabLadder(now) {
   const cx = player.x + player.w / 2;
   const top = player.y, bottom = player.y + player.h;
   for (const l of level.ladders) {
-    if (cx >= l.x + 6 && cx < l.x + TILE - 6 && bottom > l.top + 4 && top < l.bottom - 4) {
+    if (cx < l.x + 6 || cx >= l.x + TILE - 6) continue;
+    if (bottom > l.top + 4 && top < l.bottom - 4) {
       player.climbing = true;
       player.vx = 0; player.vy = 0;
-      player.x = l.x + TILE / 2 - player.w / 2; // center on the rail
-      jumpBufferUntil = 0; // the same up-press that grabbed it must not also eject you
+      player.x = l.x + TILE / 2 - player.w / 2;
+      jumpBufferUntil = 0;
+      return;
+    }
+    if (keys.down && player.onGround && bottom >= l.top - 4 && bottom <= l.top + 8) {
+      player.climbing = true;
+      player.y = l.top - player.h + 10;
+      player.vx = 0; player.vy = 0;
+      player.x = l.x + TILE / 2 - player.w / 2;
+      jumpBufferUntil = 0;
       return;
     }
   }
@@ -2358,27 +2367,44 @@ function drawBoats(t) {
     const bowDir = boat.vx > 0 ? 1 : -1;
     const bowX = bowDir > 0 ? x0 + boat.w : x0;
     const sternX = bowDir > 0 ? x0 : x0 + boat.w;
-    ctx.fillStyle = '#5a4020';
+    ctx.fillStyle = '#4a3518';
     ctx.beginPath();
-    ctx.moveTo(sternX, by);
+    ctx.moveTo(sternX - bowDir * 4, by + boat.h);
+    ctx.lineTo(sternX, by);
     ctx.lineTo(bowX, by);
-    ctx.lineTo(bowX + bowDir * 14, by + boat.h * 0.4);
-    ctx.lineTo(bowX, by + boat.h);
-    ctx.lineTo(sternX, by + boat.h);
+    ctx.lineTo(bowX + bowDir * 18, by + boat.h * 0.35);
+    ctx.lineTo(bowX + bowDir * 6, by + boat.h);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#8a6a42';
-    ctx.fillRect(x0, by, boat.w, 4);
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
-    for (let px = 10; px < boat.w; px += 14) {
-      ctx.beginPath(); ctx.moveTo(x0 + px, by + 4); ctx.lineTo(x0 + px, by + boat.h); ctx.stroke();
-    }
     ctx.fillStyle = '#6b4f2e';
-    ctx.fillRect(x0 + boat.w * 0.3, by + 1, boat.w * 0.15, boat.h - 2);
-    ctx.strokeStyle = 'rgba(180,220,255,0.35)'; ctx.lineWidth = 1;
-    const wakeX = bowX + bowDir * 12;
-    ctx.beginPath(); ctx.moveTo(wakeX, by + boat.h * 0.4 + 2); ctx.lineTo(wakeX + bowDir * 8, by + boat.h * 0.4 + 4); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(wakeX, by + boat.h * 0.4 + 5); ctx.lineTo(wakeX + bowDir * 5, by + boat.h * 0.4 + 7); ctx.stroke();
+    ctx.fillRect(x0, by, boat.w, 3);
+    ctx.strokeStyle = '#3a2a12'; ctx.lineWidth = 1;
+    ctx.strokeRect(x0, by, boat.w, boat.h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+    for (let px = 12; px < boat.w - 4; px += 16) {
+      ctx.beginPath(); ctx.moveTo(x0 + px, by + 3); ctx.lineTo(x0 + px, by + boat.h - 1); ctx.stroke();
+    }
+    const cabinX = bowDir > 0 ? x0 + 4 : x0 + boat.w - 22;
+    ctx.fillStyle = '#5a4020';
+    ctx.fillRect(cabinX, by - 8, 18, 8);
+    ctx.fillStyle = '#3a2a12';
+    ctx.fillRect(cabinX, by - 9, 18, 2);
+    ctx.fillStyle = 'rgba(180,220,255,0.4)';
+    ctx.fillRect(cabinX + 4, by - 6, 4, 3);
+    ctx.fillRect(cabinX + 10, by - 6, 4, 3);
+    const railX1 = bowDir > 0 ? x0 + 24 : x0;
+    const railX2 = bowDir > 0 ? x0 + boat.w - 2 : x0 + boat.w - 26;
+    ctx.strokeStyle = '#6b5030'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(railX1, by - 4); ctx.lineTo(railX2, by - 4); ctx.stroke();
+    for (let rx = railX1; rx <= railX2; rx += 10) {
+      ctx.beginPath(); ctx.moveTo(rx, by); ctx.lineTo(rx, by - 4); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(180,220,255,0.3)'; ctx.lineWidth = 1;
+    const wakeX = bowX + bowDir * 16;
+    for (let i = 0; i < 3; i++) {
+      const wy = by + boat.h * 0.35 + i * 4;
+      ctx.beginPath(); ctx.moveTo(wakeX, wy); ctx.lineTo(wakeX + bowDir * (10 - i * 3), wy + 2); ctx.stroke();
+    }
   }
 }
 
