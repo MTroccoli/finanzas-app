@@ -254,7 +254,7 @@ const LEVEL_SPECS = [
       { x: 92, y: 21, w: 3, range: [89, 99], speed: 2.0 },
     ],
     swingPoints: [
-      [48, 9], [67, 9],
+      [67, 9],
       [89, 13], [99, 13],
     ],
     coins: [

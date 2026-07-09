@@ -944,7 +944,9 @@ function killPlayer() {
     return;
   }
   currentPowerState = 'small';
-  player = newPlayer(level.spawn, 'small', currentGadget); // keep the gadget on respawn
+  const respawn = level.checkpoint || level.spawn;
+  player = newPlayer(respawn, 'small', currentGadget);
+  if (currentGadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
   if (level.chase) {
     const ch = level.chase;
     player.x = ch.batBoatX + 30;
@@ -1330,6 +1332,9 @@ function updatePlaying(dt) {
       if (player.gadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
       score += BAT_SCORE;
       hud.score.textContent = score;
+      if (level.name.startsWith('2-')) {
+        level.checkpoint = { x: bat.x, y: bat.y };
+      }
     }
   }
 
