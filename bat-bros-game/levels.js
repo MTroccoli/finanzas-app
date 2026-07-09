@@ -305,53 +305,54 @@ const LEVEL_SPECS = [
     name: '2-4',
     indoor: true,
     dock: true,
-    width: 50, height: 20, groundY: 18,
+    width: 34, height: 30, groundY: 28,
     pits: [],
-    platforms: [
-      // lower deck catwalks
-      { x: 8, y: 15, w: 6 },
-      { x: 18, y: 15, w: 4 },
-      // mid deck
-      { x: 3, y: 11, w: 7 },
-      { x: 14, y: 11, w: 6 },
-      // upper deck
-      { x: 7, y: 7, w: 8 },
-      // boss arena: wide flat top deck
-      { x: 26, y: 11, w: 22 },
-    ],
-    walls: [
-      // hull walls (left side of ship)
-      { x: 0, w: 2, topRow: 4 },
-      // divider between climb and boss arena
-      { x: 24, w: 2, topRow: 7 },
+    platforms: [],
+    walls: [],
+    // stacked cargo containers in zigzag pattern; each deck's roof is
+    // the next patrol lane. Ladders run up the seams between them.
+    houses: [
+      { x: 4, w: 12, topRow: 24, baseRow: 28, style: 'container' },
+      { x: 18, w: 12, topRow: 20, baseRow: 24, style: 'container' },
+      { x: 4, w: 12, topRow: 16, baseRow: 20, style: 'container' },
+      { x: 18, w: 12, topRow: 12, baseRow: 16, style: 'container' },
+      // boss arena: wide top deck spanning both columns
+      { x: 4, w: 26, topRow: 8, baseRow: 12, style: 'container' },
     ],
     ladders: [
-      { x: 14, topRow: 15, baseRow: 18 },
-      { x: 10, topRow: 11, baseRow: 15 },
-      { x: 6, topRow: 7, baseRow: 11 },
-      { x: 24, topRow: 7, baseRow: 11 },
+      // each ladder tops onto the target container's roof row
+      { x: 3, topRow: 24, baseRow: 28 },   // ground -> C1 roof
+      { x: 17, topRow: 20, baseRow: 24 },  // C1 roof -> C2 roof
+      { x: 3, topRow: 16, baseRow: 20 },   // C2 roof -> C3 roof
+      { x: 17, topRow: 12, baseRow: 16 },  // C3 roof -> C4 roof
+      { x: 3, topRow: 8, baseRow: 12 },    // C4 roof -> boss arena
     ],
-    houses: [],
-    swingPoints: [
-      [4, 13],
-      [12, 9],
-      [20, 5],
-    ],
+    swingPoints: [],
     coins: [
-      [3, 17], [6, 17], [10, 14], [20, 14],
-      [5, 10], [9, 10], [16, 10],
-      [10, 6], [12, 6],
+      // one row of coins per deck to reward tempo mastery
+      [7, 23], [12, 23],
+      [21, 19], [26, 19],
+      [7, 15], [12, 15],
+      [21, 11], [26, 11],
     ],
+    // each deck has a thug patrolling wall-to-wall — climbing a ladder
+    // while a thug is right over its top means getting knocked off
     thugs: [
-      { x: 10, y: 18, range: [8, 16], helmet: true },
-      { x: 4, y: 15, range: [3, 8] },
-      { x: 16, y: 11, range: [14, 19], helmet: true },
-      { x: 9, y: 7, range: [7, 14] },
+      { x: 8, y: 28, range: [3, 15] },
+      { x: 10, y: 24, range: [4, 15], helmet: true },
+      { x: 22, y: 20, range: [18, 29] },
+      { x: 10, y: 16, range: [4, 15], helmet: true },
+      { x: 22, y: 12, range: [18, 29] },
     ],
-    birds: [],
-    bats: [[20, 7]],
-    twoface: { x: 40, hp: TWOFACE_HP },
-    spawn: { x: 2, y: 16 },
+    // birds cross the gaps between decks, sweeping past the ladder tops
+    birds: [
+      { x: 18, y: 22, range: [4, 29] },
+      { x: 10, y: 14, range: [4, 29] },
+      { x: 20, y: 10, range: [4, 29] },
+    ],
+    bats: [[26, 11]],
+    twoface: { x: 22, hp: TWOFACE_HP, floorRow: 8, arenaMinX: 15, arenaMaxX: 28, triggerX: 12 },
+    spawn: { x: 2, y: 26 },
   },
 ];
 

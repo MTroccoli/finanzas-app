@@ -969,7 +969,7 @@ function killPlayer() {
   if (level.twoface && level.twoface.alive) {
     const tf = level.twoface;
     tf.x = tf.homeX;
-    tf.y = 11 * TILE - tf.h;
+    tf.y = tf.floorRow * TILE - tf.h;
     if (tf.state !== 'idle') { tf.state = 'fight'; tf.attackCooldown = performance.now() + 3000; }
     tf.barrage = [];
     // remove spawned thugs from the boss arena
@@ -1216,10 +1216,10 @@ function updateTwoFace(dt, now) {
     return;
   }
 
-  const floorY = tf.minX ? 11 * TILE : level.groundY * TILE;
+  const floorY = tf.floorRow * TILE;
 
   if (tf.state === 'idle') {
-    if (player.x > 28 * TILE) {
+    if (player.x > tf.triggerX) {
       tf.state = 'coin_flip';
       tf.coinFlipAt = now;
       tf.coinAngle = 0;
@@ -3625,9 +3625,100 @@ function drawHouses(t) {
     const roofY = hs.topRow * TILE - camera.y;
     const baseY = hs.baseRow * TILE - camera.y;
 
+    if (hs.style === 'container') {
+      drawCargoContainer(hs, x0, wpx, roofY, baseY);
+      continue;
+    }
+
     drawHouseFacade(hs, x0, wpx, roofY, baseY);
     if (hs.style === 'terrace') drawTerraceRoof(hs, t, x0, wpx, roofY);
     else drawBrownstoneRoof(hs, t, x0, wpx, roofY);
+  }
+}
+
+function drawCargoContainer(hs, x0, wpx, roofY, baseY) {
+  // pick a stable color per container from its seed
+  const palette = [
+    ['#a83a2a', '#7a281c', '#c85040'], // rusty red
+    ['#2a5f6b', '#1a4451', '#3a7d8a'], // teal blue
+    ['#7a5a1e', '#5a4218', '#9c7c2f'], // mustard
+    ['#3a5a2a', '#294520', '#4f7538'], // forest green
+    ['#4a3a5a', '#33284a', '#5e4b74'], // faded purple
+  ];
+  const p = palette[Math.floor(hash01(hs.x * 3 + hs.topRow * 7) * palette.length)];
+  const hpx = baseY - roofY;
+
+  // body
+  ctx.fillStyle = p[0];
+  ctx.fillRect(x0, roofY, wpx, hpx);
+
+  // corrugated vertical ribs
+  ctx.strokeStyle = p[1];
+  ctx.lineWidth = 1;
+  for (let x = x0 + 6; x < x0 + wpx; x += 8) {
+    ctx.beginPath();
+    ctx.moveTo(x, roofY + 6);
+    ctx.lineTo(x, baseY - 4);
+    ctx.stroke();
+  }
+  // subtle highlight ribs
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  for (let x = x0 + 3; x < x0 + wpx; x += 8) {
+    ctx.beginPath();
+    ctx.moveTo(x, roofY + 6);
+    ctx.lineTo(x, baseY - 4);
+    ctx.stroke();
+  }
+
+  // top rail (walkable surface highlight)
+  ctx.fillStyle = p[2];
+  ctx.fillRect(x0, roofY, wpx, 5);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x0, roofY + 5, wpx, 1);
+
+  // bottom rail
+  ctx.fillStyle = p[1];
+  ctx.fillRect(x0, baseY - 4, wpx, 4);
+
+  // corner brackets (steel castings)
+  ctx.fillStyle = '#222';
+  ctx.fillRect(x0, roofY, 8, 8);
+  ctx.fillRect(x0 + wpx - 8, roofY, 8, 8);
+  ctx.fillRect(x0, baseY - 8, 8, 8);
+  ctx.fillRect(x0 + wpx - 8, baseY - 8, 8, 8);
+
+  // container ID marking — a small yellow rectangle with faux serial
+  if (wpx > 100) {
+    const idx = x0 + wpx * 0.55;
+    const idy = roofY + hpx * 0.35;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(idx, idy, 60, 14);
+    ctx.fillStyle = '#e8d060';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    const seed = Math.floor(hash01(hs.x + hs.topRow * 13) * 9000 + 1000);
+    ctx.fillText(`GCU ${seed}`, idx + 4, idy + 10);
+  }
+
+  // doors on the front (right side of container) — two vertical panels
+  const doorX = x0 + wpx - 40;
+  if (wpx > 60) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(doorX, roofY + 8);
+    ctx.lineTo(doorX, baseY - 6);
+    ctx.stroke();
+    // door handle bars
+    ctx.strokeStyle = p[1];
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 2; i++) {
+      const dx = doorX + 8 + i * 14;
+      ctx.beginPath();
+      ctx.moveTo(dx, roofY + 10);
+      ctx.lineTo(dx, baseY - 8);
+      ctx.stroke();
+    }
   }
 }
 
