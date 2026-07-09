@@ -192,7 +192,7 @@ const LEVEL_SPECS = [
     // hooks — no fixed rest stop anymore, land on it mid-swing or time a
     // hop onto it while it passes
     boats: [
-      { x: 58, y: 17, w: 5, range: [53, 65], speed: 1.0 },
+      { x: 58, y: 17, w: 3, range: [53, 66], speed: 1.7 },
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
@@ -213,9 +213,9 @@ const LEVEL_SPECS = [
     ],
     birds: [
       { x: 45, y: 13, range: [40, 50] },
-      { x: 78, y: 12, range: [72, 90] },
+      { x: 78, y: 14, range: [72, 90] },
     ],
-    bats: [[37, 17]],
+    bats: [[60, 14]],
     spawn: { x: 2, y: 15 },
   },
 ];

@@ -258,6 +258,10 @@ function updateBatarangs(dt) {
       if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
         if (g.helmet) {
           g.helmet = false;
+          // send it home right away — otherwise it keeps overlapping the
+          // now-unhelmeted thug for a few more frames and kills him in the
+          // same throw instead of taking a second hit
+          b.phase = 'back';
         } else if (b.type !== 'batigarra') {
           g.alive = false;
           score += 100;
@@ -305,6 +309,21 @@ function tryGrabLadder(now) {
   }
 }
 
+// A ladder shaft has no floor of its own where it lets off onto a rooftop —
+// the floor belongs to the platform beside it. Stepping off the top rung
+// used to catch the corner of that platform's face (the player's box was
+// exactly as tall as the gap, so gravity dropped it into the wall's edge
+// before it cleared onto the roof). Mantle onto whichever neighboring
+// column is solid so reaching the top always lands Batman ON the platform.
+function mountLadderExit(row) {
+  const cx = player.x + player.w / 2;
+  const tile = Math.floor(cx / TILE);
+  if (isSolidTile(tile, row)) { player.onGround = true; return; }
+  if (isSolidTile(tile + 1, row)) { player.x = (tile + 1) * TILE + 2; player.onGround = true; }
+  else if (isSolidTile(tile - 1, row)) { player.x = tile * TILE - player.w - 2; player.onGround = true; }
+  else { player.onGround = false; }
+}
+
 function updateClimb(dt, now) {
   const cx = player.x + player.w / 2;
   const l = level.ladders.find(ll => cx >= ll.x && cx < ll.x + TILE);
@@ -326,8 +345,15 @@ function updateClimb(dt, now) {
   }
 
   const feet = player.y + player.h;
-  if (feet <= l.top) { player.y = l.top - player.h; player.climbing = false; player.onGround = true; }
-  else if (feet >= l.bottom) { player.y = l.bottom - player.h; player.climbing = false; player.onGround = true; }
+  if (feet <= l.top) {
+    player.y = l.top - player.h;
+    player.climbing = false;
+    mountLadderExit(Math.floor(l.top / TILE));
+  } else if (feet >= l.bottom) {
+    player.y = l.bottom - player.h;
+    player.climbing = false;
+    mountLadderExit(Math.floor(l.bottom / TILE));
+  }
 }
 
 function tryAttachGrapple(now) {
@@ -2207,6 +2233,33 @@ function drawTiles() {
       // in the cave, "walls" are plain rock terraces drawn right here
       if (!level.cave && ty < level.groundY && wallAt(tx)) continue;
 
+      // docks: a wooden pier walkway over the harbour instead of solid
+      // street tiles — the top row is the plank walkway, everything below
+      // is a thin support pylon with the harbour water visible through the
+      // gaps (drawDockWater paints that band behind everything)
+      if (level.dock && ty >= level.groundY) {
+        const isTop = ty === level.groundY;
+        if (isTop) {
+          ctx.fillStyle = '#8a6a42';
+          ctx.fillRect(px, py, TILE, 10);
+          ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px, py + 10); ctx.lineTo(px + TILE, py + 10); ctx.stroke();
+          if (hash01(tx * 3.3) > 0.5) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+            ctx.beginPath(); ctx.moveTo(px + TILE / 2, py + 1); ctx.lineTo(px + TILE / 2, py + 9); ctx.stroke();
+          }
+          ctx.fillStyle = '#5c4326';
+          ctx.fillRect(px + 6, py + 10, TILE - 12, TILE - 10);
+        } else {
+          ctx.fillStyle = '#4a3620';
+          ctx.fillRect(px + TILE * 0.35, py, TILE * 0.3, TILE);
+        }
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+        continue;
+      }
+
       const topCol = level.cave ? '#4a5578' : '#565c6b';
       const bodyCol = level.cave ? '#1c2440' : '#282c36';
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
@@ -2232,30 +2285,39 @@ function drawTiles() {
 // roof with a water tank + antenna. The collision shape is unchanged (a
 // solid block topRow..ground); this is purely the look. Batman walks along
 // the roof at topRow, in front of the rooftop props.
-// Docks: the harbour water filling every pit, drawn behind the terrain.
-// Falling in still kills exactly like any other pit — this is purely the look.
+// Docks: the harbour water, drawn behind the terrain. A shallow band runs
+// the FULL level width so the pier reads as standing over the sea from the
+// very first step, not just at the pit gaps; the pits themselves get a
+// full-depth fill (falling in still kills exactly like any other pit).
+function drawWaterBand(x0, x1, waterTop, t, h) {
+  if (x1 < -20 || x0 > CANVAS_W + 20 || waterTop > CANVAS_H) return;
+  ctx.fillStyle = '#0a2740';
+  ctx.fillRect(x0, waterTop, x1 - x0, h);
+  ctx.strokeStyle = 'rgba(127,212,255,0.18)';
+  ctx.lineWidth = 1;
+  const rippleRows = Math.max(1, Math.floor(h / 12));
+  for (let i = 0; i < rippleRows; i++) {
+    const yy = waterTop + 8 + i * 12;
+    if (yy > waterTop + h) break;
+    ctx.beginPath();
+    for (let x = x0; x <= x1; x += 16) {
+      const wy = yy + Math.sin((x + t / 40 + i * 30) / 40) * 2;
+      if (x === x0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(180,220,255,0.22)';
+  ctx.fillRect(x0, waterTop, x1 - x0, 3);
+}
+
 function drawDockWater(t) {
   if (!level.dock) return;
   const waterTop = level.groundY * TILE - camera.y;
   if (waterTop > CANVAS_H) return;
+  drawWaterBand(-camera.x, level.pixelWidth - camera.x, waterTop, t, 40);
   for (const [a, b] of level.pits) {
     const x0 = a * TILE - camera.x, x1 = (b + 1) * TILE - camera.x;
-    if (x1 < -20 || x0 > CANVAS_W + 20) continue;
-    ctx.fillStyle = '#0a2740';
-    ctx.fillRect(x0, waterTop, x1 - x0, CANVAS_H - waterTop);
-    ctx.strokeStyle = 'rgba(127,212,255,0.18)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 6; i++) {
-      const yy = waterTop + 8 + i * 12;
-      ctx.beginPath();
-      for (let x = x0; x <= x1; x += 16) {
-        const wy = yy + Math.sin((x + t / 40 + i * 30) / 40) * 2;
-        if (x === x0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
-      }
-      ctx.stroke();
-    }
-    ctx.fillStyle = 'rgba(180,220,255,0.22)';
-    ctx.fillRect(x0, waterTop, x1 - x0, 3);
+    drawWaterBand(x0, x1, waterTop, t, CANVAS_H - waterTop);
   }
 }
 
