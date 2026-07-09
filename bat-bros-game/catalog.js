@@ -32,6 +32,7 @@ const SHOOT_COOLDOWN_MS = 500;
 const BATARANG_SPEED = 7.5;
 const BATARANG_RANGE = 130;
 const BATARANG_LIFESPAN_MS = 3000;
+const BATARANG_MAX_AMMO = 5;
 const BAT_SCORE = 2000;
 
 // --- Progression ---
@@ -91,7 +92,7 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          boats = [], spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
+          boats = [], cranes = [], spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -164,6 +165,21 @@ function buildLevel(spec) {
       x: b.x * TILE, y: b.y * TILE, w: (b.w || 4) * TILE, h: BOAT_THICK,
       minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
       vx: b.speed ?? 1.0,
+    })),
+    cranes: cranes.map(c => ({
+      towerX: c.towerX * TILE,
+      armY: c.armY * TILE,
+      anchorX: c.armEndX * TILE,
+      anchorY: c.armY * TILE,
+      ropeLen: c.ropeLen * TILE,
+      cargoW: c.cargoW * TILE,
+      cargoH: TILE * 2,
+      speed: c.speed,
+      amplitude: c.amplitude,
+      angle: 0,
+      cargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
+      cargoY: c.armY * TILE + c.ropeLen * TILE,
+      prevCargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
     })),
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;

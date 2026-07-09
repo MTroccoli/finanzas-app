@@ -111,6 +111,8 @@ const hud = {
   lives: document.getElementById('hud-lives'),
   level: document.getElementById('hud-level'),
   time: document.getElementById('hud-time'),
+  ammo: document.getElementById('hud-ammo'),
+  ammoWrap: document.getElementById('hud-ammo-wrap'),
 };
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -139,6 +141,14 @@ function updateWeaponButton() {
   const garra = currentGadget === 'batigarra';
   btnShoot.style.display = currentGadget ? 'flex' : '';
   btnShoot.textContent = garra ? '🪝' : '🪃';
+  if (hud.ammoWrap) {
+    const show = currentGadget === 'batarang';
+    hud.ammoWrap.style.display = show ? '' : 'none';
+    if (show) hud.ammo.textContent = batarangAmmo;
+  }
+}
+function updateAmmoHud() {
+  if (hud.ammo && currentGadget === 'batarang') hud.ammo.textContent = batarangAmmo;
 }
 
 let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover
@@ -165,6 +175,7 @@ let allCoinsBonus = false;
 let frameTime = 0;
 let currentPowerState = 'small'; // HEALTH only: small | big — carries over between levels, resets on death
 let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
+let batarangAmmo = BATARANG_MAX_AMMO;
 let batarangs = [];
 let grappleCooldownUntil = 0;
 let shakeStart = 0;
@@ -210,6 +221,7 @@ function setGadget(g) {
 }
 
 function spawnBatarang() {
+  if (player.gadget === 'batarang' && batarangAmmo <= 0) return;
   batarangs.push({
     x: player.facing > 0 ? player.x + player.w : player.x - 10,
     y: player.y + player.h * 0.4,
@@ -219,8 +231,9 @@ function spawnBatarang() {
     rot: 0,
     bornAt: performance.now(),
     alive: true,
-    type: player.gadget, // 'batarang' | 'batigarra' — picks the sprite; only batarang damages
+    type: player.gadget,
   });
+  if (player.gadget === 'batarang') { batarangAmmo--; updateAmmoHud(); }
 }
 
 function updateBatarangs(dt) {
@@ -508,6 +521,7 @@ function loadLevel(idx) {
   timeLeft = LEVEL_TIME;
   timeAccum = 0;
   batarangs = [];
+  batarangAmmo = BATARANG_MAX_AMMO;
   grappleCooldownUntil = 0;
   dustParticles = [];
   impactFlashes = [];
@@ -843,6 +857,26 @@ function updateBoats(dt) {
     if (overlapX && player.vy >= 0 && feet >= boat.y - 2 && feet <= boat.y + 16) {
       player.x += boat.vx * dt;
       player.y = boat.y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+  }
+}
+
+function updateCranes(dt, now) {
+  for (const crane of level.cranes) {
+    crane.prevCargoX = crane.cargoX;
+    crane.angle = Math.sin(now * crane.speed) * crane.amplitude;
+    crane.cargoX = crane.anchorX + Math.sin(crane.angle) * crane.ropeLen - crane.cargoW / 2;
+    crane.cargoY = crane.anchorY + Math.cos(crane.angle) * crane.ropeLen;
+  }
+  if (player.swinging || player.climbing) return;
+  for (const crane of level.cranes) {
+    const overlapX = player.x + player.w > crane.cargoX && player.x < crane.cargoX + crane.cargoW;
+    const feet = player.y + player.h;
+    if (overlapX && player.vy >= 0 && feet >= crane.cargoY - 2 && feet <= crane.cargoY + 16) {
+      player.x += (crane.cargoX - crane.prevCargoX);
+      player.y = crane.cargoY - player.h;
       player.vy = 0;
       player.onGround = true;
     }
@@ -1233,6 +1267,7 @@ function updatePlaying(dt) {
   }
 
   updateBoats(dt);
+  updateCranes(dt, now);
 
   // batarang / batigarra throw (the batigarra's trigger doubles as the rope
   // reel while swinging, so it never fires mid-swing)
@@ -1264,13 +1299,12 @@ function updatePlaying(dt) {
     }
   }
 
-  // bats: in Act 1 the emblem only makes Batman stronger (an extra hit).
-  // The batarang returns as an upgrade in Act 2.
   for (const bat of level.bats) {
     if (bat.taken) continue;
     if (aabbOverlap(player, bat)) {
       bat.taken = true;
       setPowerState('big');
+      if (player.gadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
       score += BAT_SCORE;
       hud.score.textContent = score;
     }
@@ -1400,8 +1434,8 @@ function update(dt) {
       } else {
         state = 'win';
         const arma = currentGadget === 'batigarra' ? 'batigarra' : 'batarang';
-        showOverlay('RUMBO AL ACTO 2',
-          `Con la ${arma} en el cinturón, Batman deja la Baticueva rumbo a los muelles de Gotham. Two-Face tiene a Robin... la historia continúa en el ACTO 2. Puntaje: ${score} con ${coinsCollected} monedas.`,
+        showOverlay('MUELLES CONQUISTADOS',
+          `Con la ${arma} en mano, Batman limpió los muelles de Gotham. Two-Face no puede esconderse para siempre... la historia continúa en el ACTO 3. Puntaje: ${score} con ${coinsCollected} monedas.`,
           'JUGAR DE NUEVO');
       }
     }
@@ -2345,8 +2379,51 @@ function drawBoats(t) {
   }
 }
 
-// Wooden dock ladders: two rails + rungs, the climbable strip Batman grabs
-// with up/down (see tryGrabLadder/updateClimb).
+function drawCranes() {
+  const palette = ['#8b4a3a', '#4a6a8b', '#5a6a3a', '#7a5a3a'];
+  for (const crane of level.cranes) {
+    const tx = crane.towerX - camera.x;
+    const ay = crane.armY - camera.y;
+    const groundPx = level.groundY * TILE - camera.y;
+    const tw = 20;
+
+    ctx.fillStyle = '#555';
+    ctx.fillRect(tx - tw / 2, ay, tw, groundPx - ay);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+    for (let y = ay + 15; y < groundPx; y += 30) {
+      ctx.beginPath(); ctx.moveTo(tx - tw / 2, y); ctx.lineTo(tx + tw / 2, y + 25); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx + tw / 2, y); ctx.lineTo(tx - tw / 2, y + 25); ctx.stroke();
+    }
+
+    const armEnd = crane.anchorX - camera.x;
+    ctx.fillStyle = '#666';
+    ctx.fillRect(Math.min(tx, armEnd) - 4, ay - 6, Math.abs(armEnd - tx) + 8, 12);
+    const cwDir = armEnd > tx ? -1 : 1;
+    ctx.fillStyle = '#444';
+    ctx.fillRect(tx + cwDir * 20, ay - 4, 30, 18);
+    ctx.strokeStyle = '#777'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(tx, ay - 14); ctx.lineTo(armEnd, ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx, ay - 14); ctx.lineTo(tx + cwDir * 40, ay + 2); ctx.stroke();
+    ctx.fillStyle = '#777';
+    ctx.beginPath(); ctx.moveTo(tx - 4, ay - 6); ctx.lineTo(tx, ay - 20); ctx.lineTo(tx + 4, ay - 6); ctx.fill();
+
+    const cx = crane.cargoX - camera.x, cy = crane.cargoY - camera.y;
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(armEnd, ay); ctx.lineTo(cx + crane.cargoW / 2, cy); ctx.stroke();
+
+    const col = palette[Math.floor(hash01(crane.towerX * 3.1) * palette.length)];
+    ctx.fillStyle = col;
+    ctx.fillRect(cx, cy, crane.cargoW, crane.cargoH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(cx + 0.5, cy + 0.5, crane.cargoW - 1, crane.cargoH - 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(cx + 2, cy + 2, crane.cargoW - 4, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(cx + 2, cy + crane.cargoH - 6, crane.cargoW - 4, 4);
+    ctx.fillStyle = '#1a1c22';
+    ctx.fillRect(cx, cy, 5, 5); ctx.fillRect(cx + crane.cargoW - 5, cy, 5, 5);
+    ctx.fillRect(cx, cy + crane.cargoH - 5, 5, 5); ctx.fillRect(cx + crane.cargoW - 5, cy + crane.cargoH - 5, 5, 5);
+  }
+}
+
 function drawLadders() {
   if (!level.ladders.length) return;
   for (const l of level.ladders) {
@@ -2369,26 +2446,32 @@ function drawLadders() {
 // Same solid collision as any other wall — this is purely the look.
 function drawContainerTower(w, x0, wpx, roofY, groundPx) {
   const bandH = TILE * 2;
-  const palette = ['#2f7dbb', '#c0453a', '#3a9d6e', '#c9a13a'];
+  const palette = ['#8b4a3a', '#4a6a8b', '#5a6a3a', '#7a5a3a', '#3a5a6a', '#6a4a5a'];
   let y = roofY, band = 0;
   while (y < groundPx - 1) {
     const h = Math.min(bandH, groundPx - y);
     const col = palette[Math.floor(hash01(w.x * 3.1 + band * 11) * palette.length)];
     ctx.fillStyle = col;
     ctx.fillRect(x0, y, wpx, h);
-    // corrugation ridges
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    for (let cx = x0 + 6; cx < x0 + wpx - 2; cx += 8) ctx.fillRect(cx, y + 2, 3, h - 4);
-    // top highlight streak + corner castings
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x0, y, wpx, 3);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y + 0.5, wpx - 1, h - 1);
+    // top highlight + bottom shadow
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(x0 + 2, y + 2, wpx - 4, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x0 + 2, y + h - 6, wpx - 4, 4);
+    // corrugation lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    for (let cx = x0 + 8; cx < x0 + wpx - 4; cx += 18) {
+      ctx.beginPath(); ctx.moveTo(cx, y + 6); ctx.lineTo(cx, y + h - 6); ctx.stroke();
+    }
+    // shipping label
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x0 + wpx * 0.3, y + h * 0.3, wpx * 0.4, h * 0.15);
+    // corner castings
     ctx.fillStyle = '#1a1c22';
-    ctx.fillRect(x0, y, 6, 6); ctx.fillRect(x0 + wpx - 6, y, 6, 6);
-    ctx.fillRect(x0, y + h - 6, 6, 6); ctx.fillRect(x0 + wpx - 6, y + h - 6, 6, 6);
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2;
-    ctx.strokeRect(x0 + 1, y + 1, wpx - 2, h - 2);
+    ctx.fillRect(x0, y, 5, 5); ctx.fillRect(x0 + wpx - 5, y, 5, 5);
+    ctx.fillRect(x0, y + h - 5, 5, 5); ctx.fillRect(x0 + wpx - 5, y + h - 5, 5, 5);
     y += bandH; band++;
   }
-  // walkable rim at the very top, so the standing surface always reads clearly
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
   ctx.fillRect(x0, roofY, wpx, 3);
 }
@@ -3864,6 +3947,7 @@ function render(t) {
   drawBackground(t);
   drawDockWater(t);
   drawBoats(t);
+  drawCranes();
   drawSwingPoints(t);
   drawTiles();
   if (level.cave) drawCaveProps(t);
