@@ -71,9 +71,11 @@ const CAVE_COMPUTER_TRIGGER = 110;
 const GARRA_REEL_SPEED = 1.6;
 const GARRA_MIN_RADIUS = 44;
 const GARRA_PUMP = 0.0009;
+const GARRA_MAX_ANGULAR_VEL = 0.26; // caps pumped speed: enough for one full loop, not a blur
 
-// --- Act 2: docks ---
+// --- Act 2: docks (wooden ladders + moving boats) ---
 const LADDER_SPEED = 2.6;
+const BOAT_THICK = 16; // raft body thickness below its top (walkable) surface
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -89,7 +91,7 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
+          boats = [], spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -155,6 +157,13 @@ function buildLevel(spec) {
     })),
     bats: bats.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
+    })),
+    // moving rafts (docks): a patrolling platform Batman must time a landing
+    // on instead of a fixed rest stop — same range/bounce pattern as birds
+    boats: boats.map(b => ({
+      x: b.x * TILE, y: b.y * TILE, w: (b.w || 4) * TILE, h: BOAT_THICK,
+      minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
+      vx: b.speed ?? 1.0,
     })),
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;

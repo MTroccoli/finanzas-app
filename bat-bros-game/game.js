@@ -414,6 +414,9 @@ function updateSwing(dt, now) {
       const gain = sameWay ? GARRA_PUMP : GARRA_PUMP * 1.6; // braking bites a little harder
       player.swingAngularVel += pumpDir * gain * dt;
     }
+    // cap pumped speed: enough momentum for a full loop around the anchor,
+    // but pumping longer doesn't keep spinning it up into a blur
+    player.swingAngularVel = Math.max(-GARRA_MAX_ANGULAR_VEL, Math.min(GARRA_MAX_ANGULAR_VEL, player.swingAngularVel));
   } else {
     const reelFloor = player.swingMinR ?? 44;
     player.swingRadius = Math.max(reelFloor, player.swingRadius - (player.swingMinR ? 0 : 0.85) * dt);
@@ -795,6 +798,28 @@ function patrolWallBounce(e) {
     const tx = Math.floor(e.x / TILE);
     e.x = (tx + 1) * TILE;
     e.vx = Math.abs(e.vx);
+  }
+}
+
+// Moving rafts (docks): patrol back and forth like a bird, then let a
+// falling player land on top same as solid ground. Walking (or swinging)
+// off the raft's footprint just resumes the fall — there's no ledge grab.
+function updateBoats(dt) {
+  for (const boat of level.boats) {
+    boat.x += boat.vx * dt;
+    if (boat.x < boat.minX) { boat.x = boat.minX; boat.vx = Math.abs(boat.vx); }
+    if (boat.x + boat.w > boat.maxX) { boat.x = boat.maxX - boat.w; boat.vx = -Math.abs(boat.vx); }
+  }
+  if (player.swinging || player.climbing) return;
+  for (const boat of level.boats) {
+    const overlapX = player.x + player.w > boat.x && player.x < boat.x + boat.w;
+    const feet = player.y + player.h;
+    if (overlapX && player.vy >= 0 && feet >= boat.y - 2 && feet <= boat.y + 16) {
+      player.x += boat.vx * dt;
+      player.y = boat.y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
   }
 }
 
@@ -1180,6 +1205,8 @@ function updatePlaying(dt) {
     if (!player.onGround) tryAttachGrapple(now);
     tryGrabLadder(now);
   }
+
+  updateBoats(dt);
 
   // batarang / batigarra throw (the batigarra's trigger doubles as the rope
   // reel while swinging, so it never fires mid-swing)
@@ -2229,6 +2256,30 @@ function drawDockWater(t) {
     }
     ctx.fillStyle = 'rgba(180,220,255,0.22)';
     ctx.fillRect(x0, waterTop, x1 - x0, 3);
+  }
+}
+
+// Moving raft: a small wooden deck that drifts back and forth across the
+// water gap. Batman must time a landing on it — walking off its edge (or
+// missing) drops straight into the pit below, same as any other water fall.
+function drawBoats(t) {
+  for (const boat of level.boats) {
+    const x0 = boat.x - camera.x, y0 = boat.y - camera.y;
+    if (x0 + boat.w < -20 || x0 > CANVAS_W + 20) continue;
+    const bob = Math.sin(t / 260 + boat.x * 0.01) * 1.5;
+    ctx.fillStyle = '#6b4f2e';
+    ctx.fillRect(x0, y0 + bob, boat.w, boat.h);
+    ctx.fillStyle = '#8a6a42';
+    ctx.fillRect(x0, y0 + bob, boat.w, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    for (let px = 10; px < boat.w; px += 12) {
+      ctx.beginPath(); ctx.moveTo(x0 + px, y0 + bob + 4); ctx.lineTo(x0 + px, y0 + bob + boat.h); ctx.stroke();
+    }
+    // small ripple wake at the waterline under each end
+    ctx.strokeStyle = 'rgba(180,220,255,0.35)';
+    ctx.beginPath(); ctx.moveTo(x0 - 4, y0 + bob + boat.h + 2); ctx.lineTo(x0 + 4, y0 + bob + boat.h + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0 + boat.w - 4, y0 + bob + boat.h + 2); ctx.lineTo(x0 + boat.w + 4, y0 + bob + boat.h + 2); ctx.stroke();
   }
 }
 
@@ -3750,6 +3801,7 @@ function render(t) {
 
   drawBackground(t);
   drawDockWater(t);
+  drawBoats(t);
   drawSwingPoints(t);
   drawTiles();
   if (level.cave) drawCaveProps(t);

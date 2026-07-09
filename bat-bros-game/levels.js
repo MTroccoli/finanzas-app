@@ -174,10 +174,8 @@ const LEVEL_SPECS = [
     name: '2-1',
     dock: true,
     width: 96, height: 20, groundY: 17,
-    pits: [[16, 21], [52, 58], [65, 71]],
-    platforms: [
-      { x: 59, y: 17, w: 6 },
-    ],
+    pits: [[16, 21], [52, 71]],
+    platforms: [],
     walls: [
       { x: 30, w: 5, topRow: 11 },
     ],
@@ -189,6 +187,12 @@ const LEVEL_SPECS = [
     swingPoints: [
       [17, 11],
       [54, 11], [67, 11],
+    ],
+    // a raft drifts across the middle of the wide gap between the two
+    // hooks — no fixed rest stop anymore, land on it mid-swing or time a
+    // hop onto it while it passes
+    boats: [
+      { x: 58, y: 17, w: 5, range: [53, 65], speed: 1.0 },
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
@@ -211,7 +215,7 @@ const LEVEL_SPECS = [
       { x: 45, y: 13, range: [40, 50] },
       { x: 78, y: 12, range: [72, 90] },
     ],
-    bats: [[40, 17]],
+    bats: [[37, 17]],
     spawn: { x: 2, y: 15 },
   },
 ];
