@@ -281,10 +281,37 @@ canvas {
 }
 
 /* Phones held upright: block the game and ask for landscape. Gated to
-   touch/coarse-pointer devices so a resized desktop window never triggers it. */
+   touch/coarse-pointer devices so a resized desktop window never triggers it.
+   Chase mode (level 2-3) plays in portrait, so it overrides the block. */
 @media (hover: none) and (pointer: coarse) and (orientation: portrait) {
   #game-wrap { display: none; }
   #rotate-overlay { display: flex; }
+  body.chase-active #game-wrap { display: flex; }
+  body.chase-active #rotate-overlay { display: none; }
+}
+
+/* Chase mode: portrait canvas sizing for the boat-chase level */
+#game-wrap.chase-mode {
+  width: 480px;
+  max-width: 100vw;
+  flex-direction: column;
+}
+@media (hover: none) and (pointer: coarse) and (orientation: portrait) {
+  #game-wrap.chase-mode {
+    width: 100vw;
+    height: 100dvh;
+  }
+  #game-wrap.chase-mode canvas {
+    height: 100%;
+    border: none;
+  }
+  #game-wrap.chase-mode .float-controls { display: flex; }
+  #game-wrap.chase-mode #controls-left,
+  #game-wrap.chase-mode #controls-right {
+    bottom: 20px;
+    top: auto;
+    transform: none;
+  }
 }
 
 /* Phones in landscape: the game fills the whole screen edge to edge, the

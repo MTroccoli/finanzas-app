@@ -509,6 +509,7 @@ function snapCameraToPlayer() {
 }
 
 function loadLevel(idx) {
+  if (level && level.chase) exitChaseMode();
   levelIndex = idx;
   level = buildLevel(LEVEL_SPECS[idx]);
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
@@ -524,13 +525,15 @@ function loadLevel(idx) {
   shakeUntil = 0;
   hud.level.textContent = level.name;
   if (level.chase) {
+    enterChaseMode();
     const ch = level.chase;
     player.x = ch.batBoatX + 30;
-    player.y = CHASE_DECK_Y - player.h;
+    player.y = ch.batBoatY - 16 - player.h;
     player.onGround = true;
     camera.x = 0; camera.y = 0;
+  } else {
+    document.getElementById('hud').style.display = '';
   }
-  document.getElementById('hud').style.display = level.chase ? 'none' : '';
   // remember the furthest level this player has reached, for "Continuar"
   if (playerName) saveProgress(playerName, idx);
 }
@@ -945,9 +948,9 @@ function killPlayer() {
   if (level.chase) {
     const ch = level.chase;
     player.x = ch.batBoatX + 30;
-    player.y = CHASE_DECK_Y - player.h;
+    player.y = ch.batBoatY - 16 - player.h;
     player.onGround = true;
-    ch.obstacles = ch.obstacles.filter(ob => Math.abs(ob.x - player.x) > 100);
+    ch.obstacles = ch.obstacles.filter(ob => Math.abs(ob.y - ch.batBoatY) > 100);
     ch.grenades = [];
     invulnUntil = Date.now() + INVULN_TIME;
     return;
@@ -1443,8 +1446,23 @@ function updatePlaying(dt) {
 }
 
 // ---------------------------------------------------------------
-// Chase mode (level 2-3): horizontal boat pursuit
+// Chase mode (level 2-3): portrait vertical-scroll boat pursuit
 // ---------------------------------------------------------------
+function enterChaseMode() {
+  canvas.width = CHASE_W;
+  canvas.height = CHASE_H;
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('game-wrap').classList.add('chase-mode');
+  document.body.classList.add('chase-active');
+}
+function exitChaseMode() {
+  canvas.width = CANVAS_W;
+  canvas.height = CANVAS_H;
+  document.getElementById('hud').style.display = '';
+  document.getElementById('game-wrap').classList.remove('chase-mode');
+  document.body.classList.remove('chase-active');
+}
+
 function updateChase(dt, now) {
   const ch = level.chase;
   if (ch.finished) return;
@@ -1454,103 +1472,104 @@ function updateChase(dt, now) {
     return;
   }
 
-  ch.scrollX += CHASE_SCROLL_SPEED * dt;
+  ch.scrollY += CHASE_SCROLL_SPEED * dt;
   ch.dist += CHASE_SCROLL_SPEED * dt;
 
-  // player movement: left/right on the boat deck + jump
-  const accel = 0.6;
-  if (keys.left && !keys.right) player.vx -= accel * dt;
-  else if (keys.right && !keys.left) player.vx += accel * dt;
+  // player movement: left/right to steer the boat
+  const accel = 0.7;
+  if (keys.left && !keys.right) { player.vx -= accel * dt; player.facing = -1; }
+  else if (keys.right && !keys.left) { player.vx += accel * dt; player.facing = 1; }
   else player.vx *= 0.85;
-  player.vx = Math.max(-3.5, Math.min(3.5, player.vx));
-  player.x += player.vx * dt;
+  player.vx = Math.max(-4, Math.min(4, player.vx));
 
-  const boatLeft = ch.batBoatX;
-  const boatRight = ch.batBoatX + 90;
-  player.x = Math.max(boatLeft - 5, Math.min(boatRight - player.w + 5, player.x));
+  ch.batBoatX += player.vx * dt;
+  ch.batBoatX = Math.max(10, Math.min(CHASE_W - 100, ch.batBoatX));
+  player.x = ch.batBoatX + 30;
 
+  // jump (dodge upward)
   if (player.onGround && now < jumpBufferUntil) {
     jumpBufferUntil = 0;
     player.vy = CHASE_JUMP_VEL;
     player.onGround = false;
   }
-
   if (!player.onGround) {
     player.vy += CHASE_GRAVITY * dt;
     player.y += player.vy * dt;
-    if (player.y + player.h >= CHASE_DECK_Y) {
-      player.y = CHASE_DECK_Y - player.h;
+    const deckY = ch.batBoatY - 16;
+    if (player.y + player.h >= deckY) {
+      player.y = deckY - player.h;
       player.vy = 0;
       player.onGround = true;
     }
+  } else {
+    player.y = ch.batBoatY - 16 - player.h;
   }
 
-  // spawn obstacles
-  if (ch.scrollX - ch.lastObstacleAt > CHASE_OBSTACLE_GAP) {
-    ch.lastObstacleAt = ch.scrollX;
+  // spawn obstacles from above
+  if (ch.scrollY - ch.lastObstacleAt > CHASE_OBSTACLE_GAP) {
+    ch.lastObstacleAt = ch.scrollY;
+    const laneX = CHASE_LANE_LEFT + Math.random() * (CHASE_LANE_RIGHT - CHASE_LANE_LEFT);
     const kind = Math.random();
-    if (kind < 0.4) {
-      ch.obstacles.push({ type: 'buoy', x: CANVAS_W + 20, y: CHASE_WATER_Y - 18, w: 20, h: 24, hit: false });
-    } else if (kind < 0.7) {
-      ch.obstacles.push({ type: 'wood', x: CANVAS_W + 20, y: CHASE_WATER_Y - 10, w: 50, h: 12, hit: false });
+    if (kind < 0.35) {
+      ch.obstacles.push({ type: 'buoy', x: laneX, y: -30, w: 22, h: 22, hit: false });
+    } else if (kind < 0.65) {
+      const w = 40 + Math.random() * 30;
+      ch.obstacles.push({ type: 'wood', x: laneX - w / 2, y: -20, w, h: 12, hit: false });
     } else {
-      const laneY = CHASE_DECK_Y - 10 - Math.random() * 50;
-      ch.obstacles.push({ type: 'wood', x: CANVAS_W + 20, y: laneY, w: 40, h: 10, hit: false });
+      ch.obstacles.push({ type: 'barrel', x: laneX, y: -30, w: 24, h: 24, hit: false });
     }
   }
 
-  for (const ob of ch.obstacles) {
-    ob.x -= CHASE_SCROLL_SPEED * dt;
-  }
-  ch.obstacles = ch.obstacles.filter(ob => ob.x + ob.w > -50);
+  for (const ob of ch.obstacles) ob.y += CHASE_SCROLL_SPEED * dt;
+  ch.obstacles = ch.obstacles.filter(ob => ob.y < CHASE_H + 40);
 
-  // Two-Face's boat appearances
+  // Two-Face's boat appears at the top
   const tf = ch.tfBoat;
   if (!tf.visible && now >= tf.showAt) {
     tf.visible = true;
-    tf.x = CANVAS_W + 60;
+    tf.y = -100;
+    tf.targetY = 40;
     tf.hideAt = now + CHASE_TF_VISIBLE_MS;
     tf.threwGrenade = false;
   }
   if (tf.visible) {
-    const targetX = CANVAS_W - 180;
-    tf.x += (targetX - tf.x) * 0.04 * dt;
+    tf.y += (tf.targetY - tf.y) * 0.04 * dt;
     if (now >= tf.hideAt) {
-      tf.x += 4 * dt;
-      if (tf.x > CANVAS_W + 120) {
+      tf.y -= 3 * dt;
+      if (tf.y < -140) {
         tf.visible = false;
         tf.showAt = now + CHASE_TF_APPEAR_INTERVAL;
       }
     }
-    if (!tf.threwGrenade && tf.x < CANVAS_W - 100) {
+    if (!tf.threwGrenade && tf.y > 20) {
       tf.threwGrenade = true;
       ch.grenades.push({
-        x: tf.x - 10, y: CHASE_DECK_Y - 40,
-        vx: -CHASE_GRENADE_SPEED, vy: -2,
+        x: CHASE_W / 2, y: tf.y + 80,
+        vx: (ch.batBoatX + 45 - CHASE_W / 2) * 0.02,
+        vy: CHASE_GRENADE_SPEED,
         alive: true, bornAt: now,
       });
     }
   }
 
-  // grenades
+  // grenades fall downward
   for (const g of ch.grenades) {
     if (!g.alive) continue;
     g.x += g.vx * dt;
-    g.vy += 0.15 * dt;
     g.y += g.vy * dt;
-    if (g.y >= CHASE_WATER_Y - 4) {
+    if (g.y >= CHASE_H - 40) {
       g.alive = false;
-      ch.explosions.push({ x: g.x, y: CHASE_WATER_Y - 10, born: now });
-      ch.splashes.push({ x: g.x, born: now });
+      ch.explosions.push({ x: g.x, y: g.y, born: now });
+      ch.splashes.push({ x: g.x, y: g.y, born: now });
     }
   }
-  ch.grenades = ch.grenades.filter(g => g.alive || false);
+  ch.grenades = ch.grenades.filter(g => g.alive);
 
   // explosion collision
   for (const ex of ch.explosions) {
     const age = now - ex.born;
     if (age < 300) {
-      const r = 30 + age * 0.15;
+      const r = 35 + age * 0.12;
       const dx = (player.x + player.w / 2) - ex.x;
       const dy = (player.y + player.h / 2) - ex.y;
       if (dx * dx + dy * dy < r * r && Date.now() >= invulnUntil) {
@@ -1562,11 +1581,12 @@ function updateChase(dt, now) {
   ch.explosions = ch.explosions.filter(ex => now - ex.born < 600);
   ch.splashes = ch.splashes.filter(sp => now - sp.born < 500);
 
-  // obstacle collision with player
+  // obstacle collision
+  const boatHitbox = { x: ch.batBoatX, y: ch.batBoatY - 14, w: 90, h: 28 };
   for (const ob of ch.obstacles) {
     if (ob.hit) continue;
-    if (player.x + player.w > ob.x && player.x < ob.x + ob.w &&
-        player.y + player.h > ob.y && player.y < ob.y + ob.h) {
+    if (boatHitbox.x + boatHitbox.w > ob.x && boatHitbox.x < ob.x + ob.w &&
+        boatHitbox.y + boatHitbox.h > ob.y && boatHitbox.y < ob.y + ob.h) {
       ob.hit = true;
       if (Date.now() >= invulnUntil) {
         hurtPlayer();
@@ -1575,7 +1595,6 @@ function updateChase(dt, now) {
     }
   }
 
-  // win condition
   if (ch.dist >= CHASE_TARGET_DIST) {
     ch.finished = true;
     completeLevel();
@@ -1584,120 +1603,137 @@ function updateChase(dt, now) {
 
 function renderChase(t) {
   const ch = level.chase;
-  const shake = currentShakeOffset(t);
+  const CW = CHASE_W, CH = CHASE_H;
 
-  // sky
-  const g = ctx.createLinearGradient(0, 0, 0, CHASE_WATER_Y);
-  g.addColorStop(0, '#0b1628');
-  g.addColorStop(0.5, '#162540');
-  g.addColorStop(1, '#1a3555');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-  // stars
-  for (let i = 0; i < 30; i++) {
-    const sx = (hash01(i * 7.3) * CANVAS_W + ch.scrollX * 0.02) % CANVAS_W;
-    const sy = hash01(i * 3.1) * 120;
-    ctx.fillStyle = `rgba(220,230,255,${0.15 + hash01(i * 1.7) * 0.5})`;
-    ctx.fillRect(sx, sy, 2, 2);
-  }
-
-  // moon
-  ctx.fillStyle = '#eceadb';
-  ctx.beginPath(); ctx.arc(640, 55, 22, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#0b1628';
-  ctx.beginPath(); ctx.arc(652, 48, 22, 0, Math.PI * 2); ctx.fill();
-
-  // parallax skyline
-  const skyOff = ch.scrollX * 0.15;
-  ctx.fillStyle = '#0a0f1e';
-  drawSkylineRow(skyOff, CHASE_WATER_Y - 40, 60, 80, 3.7, false, t, '#0a0f1e');
-  ctx.fillStyle = '#101828';
-  drawSkylineRow(skyOff * 1.5, CHASE_WATER_Y - 20, 45, 60, 7.3, true, t, '#101828');
-
-  ctx.save();
-  ctx.translate(shake.x, shake.y);
-
-  // water
-  const wg = ctx.createLinearGradient(0, CHASE_WATER_Y, 0, CANVAS_H);
-  wg.addColorStop(0, '#0a2740');
-  wg.addColorStop(1, '#061520');
+  // full-screen water
+  const wg = ctx.createLinearGradient(0, 0, 0, CH);
+  wg.addColorStop(0, '#051520');
+  wg.addColorStop(0.3, '#0a2740');
+  wg.addColorStop(1, '#082030');
   ctx.fillStyle = wg;
-  ctx.fillRect(0, CHASE_WATER_Y, CANVAS_W, CANVAS_H - CHASE_WATER_Y);
+  ctx.fillRect(0, 0, CW, CH);
 
-  // wave ripples
-  ctx.strokeStyle = 'rgba(127,212,255,0.15)';
+  // animated wave pattern (vertical scroll)
+  ctx.strokeStyle = 'rgba(127,212,255,0.12)';
   ctx.lineWidth = 1;
-  for (let row = 0; row < 5; row++) {
-    const wy = CHASE_WATER_Y + 8 + row * 14;
+  for (let row = 0; row < Math.ceil(CH / 28) + 1; row++) {
+    const baseY = (row * 28 + ch.scrollY * 0.8) % (CH + 28) - 14;
     ctx.beginPath();
-    for (let x = 0; x <= CANVAS_W; x += 12) {
-      const yy = wy + Math.sin((x + t / 35 + row * 40 - ch.scrollX * 0.3) / 30) * 2.5;
+    for (let x = 0; x <= CW; x += 10) {
+      const yy = baseY + Math.sin((x + t / 40 + row * 50) / 35) * 3;
       if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
     }
     ctx.stroke();
   }
 
-  // surface foam line
-  ctx.fillStyle = 'rgba(180,220,255,0.2)';
-  ctx.fillRect(0, CHASE_WATER_Y, CANVAS_W, 3);
+  // foam/current lines
+  ctx.strokeStyle = 'rgba(180,220,255,0.08)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 6; i++) {
+    const lx = hash01(i * 13.7) * CW;
+    const ly = (hash01(i * 7.3) * CH + ch.scrollY * 1.2) % (CH + 80) - 40;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(lx + (hash01(i * 3.1) - 0.5) * 20, ly + 40);
+    ctx.stroke();
+  }
+
+  // skyline at top (distant, fading)
+  const skyH = 80;
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, skyH);
+  skyGrad.addColorStop(0, 'rgba(10,15,30,0.9)');
+  skyGrad.addColorStop(1, 'rgba(10,15,30,0)');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, CW, skyH);
+  const skyOff = ch.scrollY * 0.05;
+  for (let i = 0; i < 12; i++) {
+    const bx = (i * 42 - skyOff) % (CW + 42) - 21;
+    const bh = 20 + hash01(i * 5.3) * 50;
+    ctx.fillStyle = `rgba(15,20,35,${0.5 + hash01(i * 2.1) * 0.4})`;
+    ctx.fillRect(bx, skyH - bh, 36, bh);
+  }
+
+  // moon (top-right)
+  ctx.fillStyle = '#eceadb';
+  ctx.beginPath(); ctx.arc(CW - 60, 40, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#051520';
+  ctx.beginPath(); ctx.arc(CW - 52, 35, 16, 0, Math.PI * 2); ctx.fill();
 
   // obstacles
   for (const ob of ch.obstacles) {
     if (ob.type === 'buoy') {
-      const bob = Math.sin(t / 300 + ob.x * 0.05) * 3;
+      const bob = Math.sin(t / 300 + ob.x * 0.1) * 2;
       ctx.fillStyle = '#cc3333';
       ctx.beginPath();
-      ctx.arc(ob.x + 10, ob.y + 8 + bob, 10, 0, Math.PI * 2);
+      ctx.arc(ob.x + 11, ob.y + 11 + bob, 11, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.fillRect(ob.x + 7, ob.y + 4 + bob, 6, 3);
-      ctx.fillStyle = '#777';
-      ctx.fillRect(ob.x + 9, ob.y - 6 + bob, 2, 10);
-    } else {
+      ctx.fillRect(ob.x + 7, ob.y + 5 + bob, 8, 4);
+      ctx.fillStyle = '#888';
+      ctx.fillRect(ob.x + 10, ob.y - 4 + bob, 2, 10);
+    } else if (ob.type === 'wood') {
       ctx.fillStyle = '#5a3a1a';
       ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
       ctx.strokeStyle = '#3a2a0e';
       ctx.lineWidth = 1;
       ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
-      for (let lx = 8; lx < ob.w - 4; lx += 12) {
+      for (let lx = 10; lx < ob.w - 4; lx += 14) {
         ctx.beginPath();
         ctx.moveTo(ob.x + lx, ob.y);
         ctx.lineTo(ob.x + lx, ob.y + ob.h);
         ctx.stroke();
       }
+    } else {
+      ctx.fillStyle = '#555';
+      ctx.beginPath();
+      ctx.arc(ob.x + 12, ob.y + 12, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ob.x + 12, ob.y + 12, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#c9382a';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('TNT', ob.x + 12, ob.y + 15);
     }
   }
 
-  // Two-Face's boat
+  // Two-Face's boat (top, facing down)
   const tf = ch.tfBoat;
   if (tf.visible) {
     const tfBob = Math.sin(t / 280) * 2;
-    drawChaseTFBoat(tf.x, CHASE_WATER_Y - 30 + tfBob, t);
+    drawChaseTFBoatVertical(CW / 2 - 40, tf.y + tfBob, t);
   }
 
   // grenades
+  const now = performance.now();
   for (const gr of ch.grenades) {
     if (!gr.alive) continue;
-    ctx.fillStyle = '#444';
+    const rot = (now - gr.bornAt) * 0.01;
+    ctx.save();
+    ctx.translate(gr.x, gr.y);
+    ctx.rotate(rot);
+    ctx.fillStyle = '#3a3a3a';
     ctx.beginPath();
-    ctx.arc(gr.x, gr.y, 6, 0, Math.PI * 2);
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ff6633';
     ctx.beginPath();
-    ctx.arc(gr.x, gr.y - 6, 3, 0, Math.PI * 2);
+    ctx.arc(0, -7, 3, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   // explosions
-  const now = performance.now();
   for (const ex of ch.explosions) {
     const age = now - ex.born;
-    const r = 10 + age * 0.2;
+    const r = 12 + age * 0.15;
     const alpha = Math.max(0, 1 - age / 600);
-    ctx.fillStyle = `rgba(255,120,30,${alpha * 0.7})`;
+    ctx.fillStyle = `rgba(255,120,30,${alpha * 0.6})`;
     ctx.beginPath(); ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = `rgba(255,220,80,${alpha * 0.5})`;
+    ctx.fillStyle = `rgba(255,220,80,${alpha * 0.4})`;
     ctx.beginPath(); ctx.arc(ex.x, ex.y, r * 0.5, 0, Math.PI * 2); ctx.fill();
   }
 
@@ -1705,34 +1741,33 @@ function renderChase(t) {
   for (const sp of ch.splashes) {
     const age = now - sp.born;
     const alpha = Math.max(0, 1 - age / 500);
-    ctx.strokeStyle = `rgba(180,220,255,${alpha * 0.6})`;
+    ctx.strokeStyle = `rgba(180,220,255,${alpha * 0.5})`;
     ctx.lineWidth = 1.5;
-    for (let i = 0; i < 5; i++) {
-      const ang = -Math.PI + (i / 4) * Math.PI;
-      const dist = 8 + age * 0.08;
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const dist = 10 + age * 0.06;
       ctx.beginPath();
-      ctx.moveTo(sp.x + Math.cos(ang) * dist * 0.3, sp.y);
-      ctx.lineTo(sp.x + Math.cos(ang) * dist, sp.y + Math.sin(ang) * dist * 0.5);
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(sp.x + Math.cos(ang) * dist, sp.y + Math.sin(ang) * dist);
       ctx.stroke();
     }
   }
 
-  // bat-boat
-  const boatBob = Math.sin(t / 240) * 2;
-  drawChaseBatBoat(ch.batBoatX, CHASE_WATER_Y - 18 + boatBob, t);
+  // bat-boat (bottom)
+  const boatBob = Math.sin(t / 220) * 2;
+  drawChaseBatBoatVertical(ch.batBoatX, ch.batBoatY + boatBob, t);
 
-  // player on the bat-boat
+  // player standing on bat-boat
   if (Date.now() >= invulnUntil || Math.floor(Date.now() / 100) % 2 !== 0) {
     const px = player.x, py = player.y + boatBob;
     ctx.save();
     ctx.translate(px + player.w / 2, py);
-    ctx.scale(player.facing, 1);
-    ctx.translate(-player.w / 2, 0);
     const w = player.w, h = player.h;
+    ctx.translate(-w / 2, 0);
     // cape
     ctx.fillStyle = '#0d0f18';
     ctx.beginPath();
-    ctx.moveTo(-2, 10); ctx.lineTo(-8, h - 4); ctx.lineTo(w + 8, h - 4); ctx.lineTo(w + 2, 10);
+    ctx.moveTo(-2, 10); ctx.lineTo(-6, h - 2); ctx.lineTo(w + 6, h - 2); ctx.lineTo(w + 2, 10);
     ctx.closePath(); ctx.fill();
     // cowl
     ctx.fillStyle = '#131722';
@@ -1760,161 +1795,202 @@ function renderChase(t) {
     ctx.restore();
   }
 
-  ctx.restore();
-
-  // progress bar
-  const pct = Math.min(1, ch.dist / CHASE_TARGET_DIST);
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(50, 14, CANVAS_W - 100, 10);
-  ctx.fillStyle = '#29d985';
-  ctx.fillRect(50, 14, (CANVAS_W - 100) * pct, 10);
-  ctx.strokeStyle = '#8fa3d9';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(50, 14, CANVAS_W - 100, 10);
-  ctx.fillStyle = '#fff';
-  ctx.font = '9px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${Math.round(pct * 100)}%`, CANVAS_W / 2, 22);
-
-  // HUD
-  ctx.fillStyle = '#ffd166';
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText(`VIDAS: ${lives}`, 10, 42);
-  ctx.textAlign = 'right';
-  ctx.fillText(`NIVEL: ${level.name}`, CANVAS_W - 10, 42);
-
-  // intro overlay
-  if (ch.introTimer > 0) {
-    renderChaseIntro(t, ch);
+  // wake behind bat-boat
+  ctx.strokeStyle = 'rgba(180,220,255,0.2)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 4; i++) {
+    const wy = ch.batBoatY + 22 + i * 14 + boatBob;
+    const spread = 8 + i * 12;
+    ctx.beginPath();
+    ctx.moveTo(ch.batBoatX + 45 - spread, wy);
+    ctx.quadraticCurveTo(ch.batBoatX + 45, wy + 5, ch.batBoatX + 45 + spread, wy);
+    ctx.stroke();
   }
 
-  // level complete overlay
+  // --- HUD overlay ---
+  // progress bar (vertical, left side)
+  const pct = Math.min(1, ch.dist / CHASE_TARGET_DIST);
+  const barX = 12, barY = 80, barH = CH - 160;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(barX, barY, 8, barH);
+  ctx.fillStyle = '#29d985';
+  const fillH = barH * pct;
+  ctx.fillRect(barX, barY + barH - fillH, 8, fillH);
+  ctx.strokeStyle = '#8fa3d9';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, 8, barH);
+  // bat icon at progress position
+  ctx.fillStyle = '#ffd166';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('🦇', barX + 4, barY + barH - fillH - 6);
+  // percentage
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText(`${Math.round(pct * 100)}%`, barX + 4, barY + barH + 14);
+
+  // lives + level (top)
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(0, 0, CW, 28);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`❤ ${lives}`, 10, 18);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${level.name}`, CW - 10, 18);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#dbe4ff';
+  ctx.fillText('PERSECUCIÓN', CW / 2, 18);
+
+  // intro overlay
+  if (ch.introTimer > 0) renderChaseIntro(t, ch);
+
+  // level complete
   if (state === 'levelcomplete') {
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, CW, CH);
     ctx.fillStyle = '#ffd166';
-    ctx.font = 'bold 30px monospace';
+    ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('¡PERSECUCIÓN COMPLETADA!', CANVAS_W / 2, CANVAS_H / 2 - 10);
+    ctx.fillText('¡PERSECUCIÓN', CW / 2, CH / 2 - 20);
+    ctx.fillText('COMPLETADA!', CW / 2, CH / 2 + 12);
     ctx.fillStyle = '#29d985';
-    ctx.font = 'bold 16px monospace';
-    ctx.fillText('Robin ha sido rescatado', CANVAS_W / 2, CANVAS_H / 2 + 24);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('Robin ha sido rescatado', CW / 2, CH / 2 + 44);
   }
 }
 
 function renderChaseIntro(t, ch) {
+  const CW = CHASE_W, CH = CHASE_H;
   const alpha = Math.min(1, ch.introTimer / 500);
-  ctx.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = `rgba(0,0,0,${0.75 * alpha})`;
+  ctx.fillRect(0, 0, CW, CH);
 
-  // Two-Face's boat with Robin visible during intro
+  // Two-Face's boat at center with Robin
   const introPhase = (CHASE_INTRO_MS - ch.introTimer) / CHASE_INTRO_MS;
-  const tfX = CANVAS_W * 0.55 + introPhase * 200;
-  const tfY = CHASE_WATER_Y - 30;
-  drawChaseTFBoat(tfX, tfY, t);
-  drawRobinSprite(tfX + 40, tfY - 30, 0.6, true, Math.sin(t / 200) * 0.08);
+  const tfY = CH * 0.3 - introPhase * 120;
+  drawChaseTFBoatVertical(CW / 2 - 40, tfY, t);
+  drawRobinSprite(CW / 2 - 2, tfY - 28, 0.55, true, Math.sin(t / 200) * 0.08);
 
   ctx.fillStyle = 'rgba(8,10,20,0.92)';
-  ctx.fillRect(60, CANVAS_H - 120, CANVAS_W - 120, 100);
+  ctx.fillRect(30, CH - 160, CW - 60, 130);
   ctx.strokeStyle = '#ffd166';
   ctx.lineWidth = 2;
-  ctx.strokeRect(60, CANVAS_H - 120, CANVAS_W - 120, 100);
+  ctx.strokeRect(30, CH - 160, CW - 60, 130);
 
   ctx.fillStyle = '#ffd166';
-  ctx.font = 'bold 16px monospace';
+  ctx.font = 'bold 15px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('ACTO 2 — LA PERSECUCIÓN', CANVAS_W / 2, CANVAS_H - 96);
+  ctx.fillText('ACTO 2 — LA PERSECUCIÓN', CW / 2, CH - 136);
 
   ctx.fillStyle = '#dbe4ff';
-  ctx.font = '12px monospace';
-  ctx.fillText('¡Dos Caras se lleva a Robin en su lancha!', CANVAS_W / 2, CANVAS_H - 72);
-  ctx.fillText('Esquivá los obstáculos y las granadas para alcanzarlo.', CANVAS_W / 2, CANVAS_H - 54);
+  ctx.font = '11px monospace';
+  ctx.fillText('¡Dos Caras se lleva a Robin', CW / 2, CH - 110);
+  ctx.fillText('en su lancha!', CW / 2, CH - 95);
+  ctx.fillText('Esquivá los obstáculos y las', CW / 2, CH - 72);
+  ctx.fillText('granadas para alcanzarlo.', CW / 2, CH - 57);
 
   if (Math.floor(t / 500) % 2 === 0 && ch.introTimer < CHASE_INTRO_MS - 500) {
     ctx.fillStyle = '#29d985';
     ctx.font = 'bold 12px monospace';
-    ctx.fillText('PREPARATE...', CANVAS_W / 2, CANVAS_H - 32);
+    ctx.fillText('PREPARATE...', CW / 2, CH - 38);
   }
 }
 
-function drawChaseBatBoat(x, y, t) {
+// Bat-boat seen from above — bow points up (forward)
+function drawChaseBatBoatVertical(x, y, t) {
   ctx.save();
   ctx.translate(x, y);
-  // hull
+  // hull silhouette
   ctx.fillStyle = '#1a1d2e';
   ctx.beginPath();
-  ctx.moveTo(-8, 18);
-  ctx.lineTo(0, 0);
-  ctx.lineTo(90, 0);
-  ctx.lineTo(105, 8);
-  ctx.lineTo(100, 18);
+  ctx.moveTo(45, -18);  // bow tip
+  ctx.lineTo(80, 6);
+  ctx.lineTo(85, 14);
+  ctx.lineTo(80, 22);   // stern right
+  ctx.lineTo(10, 22);   // stern left
+  ctx.lineTo(5, 14);
+  ctx.lineTo(10, 6);
   ctx.closePath();
   ctx.fill();
   // deck
   ctx.fillStyle = '#242a3e';
-  ctx.fillRect(4, -2, 82, 4);
-  // bat-symbol on hull
+  ctx.fillRect(14, 2, 62, 16);
+  // cockpit
+  ctx.fillStyle = 'rgba(100,180,255,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(35, 0); ctx.lineTo(55, 0); ctx.lineTo(52, 6); ctx.lineTo(38, 6);
+  ctx.closePath();
+  ctx.fill();
+  // bat fins (sides)
+  ctx.fillStyle = '#131722';
+  ctx.beginPath();
+  ctx.moveTo(6, 10); ctx.lineTo(-4, 16); ctx.lineTo(10, 18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(84, 10); ctx.lineTo(94, 16); ctx.lineTo(80, 18);
+  ctx.closePath();
+  ctx.fill();
+  // bat-symbol on deck
   ctx.fillStyle = '#ffd166';
   ctx.beginPath();
-  ctx.moveTo(40, 6); ctx.lineTo(44, 3); ctx.lineTo(48, 5); ctx.lineTo(52, 3); ctx.lineTo(56, 6);
-  ctx.lineTo(54, 10); ctx.lineTo(48, 8); ctx.lineTo(42, 10);
+  ctx.moveTo(38, 10); ctx.lineTo(41, 7); ctx.lineTo(45, 9);
+  ctx.lineTo(49, 7); ctx.lineTo(52, 10);
+  ctx.lineTo(50, 13); ctx.lineTo(45, 11); ctx.lineTo(40, 13);
   ctx.closePath();
   ctx.fill();
-  // windshield
-  ctx.fillStyle = 'rgba(100,180,255,0.3)';
-  ctx.beginPath();
-  ctx.moveTo(72, -2); ctx.lineTo(78, -10); ctx.lineTo(84, -10); ctx.lineTo(84, -2);
-  ctx.closePath();
-  ctx.fill();
-  // wake
-  ctx.strokeStyle = 'rgba(180,220,255,0.3)';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 3; i++) {
-    const wx = -10 - i * 12;
-    ctx.beginPath();
-    ctx.moveTo(wx, 16 + i * 3);
-    ctx.lineTo(wx - 15, 18 + i * 4);
-    ctx.stroke();
-  }
   ctx.restore();
 }
 
-function drawChaseTFBoat(x, y, t) {
+// Two-Face's boat from above — bow points up, hull is purple/dark
+function drawChaseTFBoatVertical(x, y, t) {
   ctx.save();
   ctx.translate(x, y);
-  // hull — darker, menacing
+  // hull
   ctx.fillStyle = '#2a1a3a';
   ctx.beginPath();
-  ctx.moveTo(-10, 22);
-  ctx.lineTo(0, 0);
-  ctx.lineTo(100, 0);
-  ctx.lineTo(118, 10);
-  ctx.lineTo(112, 22);
+  ctx.moveTo(40, -14);  // bow
+  ctx.lineTo(74, 6);
+  ctx.lineTo(78, 16);
+  ctx.lineTo(72, 26);   // stern right
+  ctx.lineTo(8, 26);    // stern left
+  ctx.lineTo(2, 16);
+  ctx.lineTo(6, 6);
   ctx.closePath();
   ctx.fill();
   // deck
   ctx.fillStyle = '#3a2a4a';
-  ctx.fillRect(5, -3, 90, 5);
-  // half-face symbol
+  ctx.fillRect(12, 2, 56, 20);
+  // half-face logo
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.arc(50, 10, 7, -Math.PI / 2, Math.PI / 2);
+  ctx.arc(40, 12, 6, -Math.PI / 2, Math.PI / 2);
   ctx.fill();
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath();
-  ctx.arc(50, 10, 7, Math.PI / 2, -Math.PI / 2);
+  ctx.arc(40, 12, 6, Math.PI / 2, -Math.PI / 2);
   ctx.fill();
-  // Two-Face standing
-  drawTwoFaceSprite(x > 0 ? 60 : 55, -52, 0.65, Math.sin(t / 200) * 1.5);
-  // wake
-  ctx.strokeStyle = 'rgba(180,220,255,0.25)';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 3; i++) {
+  // Two-Face sprite (small, standing on deck)
+  ctx.save();
+  ctx.translate(50, 0);
+  ctx.scale(0.4, 0.4);
+  // simplified TF body
+  ctx.fillStyle = '#242f4d';
+  ctx.fillRect(-6, 0, 6, 16);
+  ctx.fillStyle = '#5a2d8c';
+  ctx.fillRect(0, 0, 6, 16);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(-5, -8, 5, 8);
+  ctx.fillStyle = '#8e3140';
+  ctx.fillRect(0, -8, 5, 8);
+  ctx.restore();
+  // engine exhaust
+  if (Math.floor(t / 100) % 2 === 0) {
+    ctx.fillStyle = 'rgba(200,200,200,0.15)';
     ctx.beginPath();
-    ctx.moveTo(116 + i * 8, 12 + i * 3);
-    ctx.lineTo(126 + i * 12, 15 + i * 4);
-    ctx.stroke();
+    ctx.arc(40, 30, 8, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
