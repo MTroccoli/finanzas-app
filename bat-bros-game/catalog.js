@@ -78,6 +78,20 @@ const GARRA_MAX_ANGULAR_VEL = 0.26; // caps pumped speed: enough for one full lo
 const LADDER_SPEED = 2.6;
 const BOAT_THICK = 16; // raft body thickness below its top (walkable) surface
 
+// --- Chase level (2-3) ---
+const CHASE_SCROLL_SPEED = 3.0;
+const CHASE_WATER_Y = 350;
+const CHASE_DECK_Y = 334;
+const CHASE_JUMP_VEL = -9;
+const CHASE_GRAVITY = 0.45;
+const CHASE_TARGET_DIST = 6000;
+const CHASE_INTRO_MS = 3500;
+const CHASE_TF_APPEAR_INTERVAL = 4500;
+const CHASE_TF_VISIBLE_MS = 3000;
+const CHASE_GRENADE_SPEED = 3.5;
+const CHASE_GRENADE_WARN_MS = 800;
+const CHASE_OBSTACLE_GAP = 160;
+
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
 // ---------------------------------------------------------------
@@ -214,9 +228,27 @@ function buildLevel(spec) {
     } : null,
     perches: indoor ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
     cave: cave ? buildCaveState(cave, width, height, groundY, solid) : null,
+    chase: spec.chase ? buildChaseState() : null,
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },
     pixelWidth: width * TILE,
     pixelHeight: height * TILE,
+  };
+}
+
+function buildChaseState() {
+  return {
+    scrollX: 0,
+    dist: 0,
+    introTimer: CHASE_INTRO_MS,
+    obstacles: [],
+    grenades: [],
+    explosions: [],
+    splashes: [],
+    tfBoat: { visible: false, x: CANVAS_W + 100, showAt: CHASE_INTRO_MS + 2000, hideAt: 0 },
+    lastObstacleAt: 0,
+    finished: false,
+    batBoatX: 120,
+    batBoatY: CHASE_DECK_Y,
   };
 }
 

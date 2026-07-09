@@ -523,6 +523,14 @@ function loadLevel(idx) {
   impactFlashes = [];
   shakeUntil = 0;
   hud.level.textContent = level.name;
+  if (level.chase) {
+    const ch = level.chase;
+    player.x = ch.batBoatX + 30;
+    player.y = CHASE_DECK_Y - player.h;
+    player.onGround = true;
+    camera.x = 0; camera.y = 0;
+  }
+  document.getElementById('hud').style.display = level.chase ? 'none' : '';
   // remember the furthest level this player has reached, for "Continuar"
   if (playerName) saveProgress(playerName, idx);
 }
@@ -934,6 +942,16 @@ function killPlayer() {
   }
   currentPowerState = 'small';
   player = newPlayer(level.spawn, 'small', currentGadget); // keep the gadget on respawn
+  if (level.chase) {
+    const ch = level.chase;
+    player.x = ch.batBoatX + 30;
+    player.y = CHASE_DECK_Y - player.h;
+    player.onGround = true;
+    ch.obstacles = ch.obstacles.filter(ob => Math.abs(ob.x - player.x) > 100);
+    ch.grenades = [];
+    invulnUntil = Date.now() + INVULN_TIME;
+    return;
+  }
   snapCameraToPlayer();
   timeLeft = LEVEL_TIME;
   invulnUntil = Date.now() + INVULN_TIME;
@@ -1183,6 +1201,8 @@ function updateBane(dt, now) {
 function updatePlaying(dt) {
   const now = performance.now();
 
+  if (level.chase) { updateChase(dt, now); return; }
+
   // Batcave: standing by the batcomputer and pressing JUMP opens it. The
   // first time shows Two-Face's file then the weapon choice; afterwards it
   // jumps straight to the choice so the weapon can be swapped after testing.
@@ -1422,6 +1442,483 @@ function updatePlaying(dt) {
   camera.y += (targets.y - camera.y) * Math.min(1, 0.12 * dt);
 }
 
+// ---------------------------------------------------------------
+// Chase mode (level 2-3): horizontal boat pursuit
+// ---------------------------------------------------------------
+function updateChase(dt, now) {
+  const ch = level.chase;
+  if (ch.finished) return;
+
+  if (ch.introTimer > 0) {
+    ch.introTimer -= dt * (1000 / 60);
+    return;
+  }
+
+  ch.scrollX += CHASE_SCROLL_SPEED * dt;
+  ch.dist += CHASE_SCROLL_SPEED * dt;
+
+  // player movement: left/right on the boat deck + jump
+  const accel = 0.6;
+  if (keys.left && !keys.right) player.vx -= accel * dt;
+  else if (keys.right && !keys.left) player.vx += accel * dt;
+  else player.vx *= 0.85;
+  player.vx = Math.max(-3.5, Math.min(3.5, player.vx));
+  player.x += player.vx * dt;
+
+  const boatLeft = ch.batBoatX;
+  const boatRight = ch.batBoatX + 90;
+  player.x = Math.max(boatLeft - 5, Math.min(boatRight - player.w + 5, player.x));
+
+  if (player.onGround && now < jumpBufferUntil) {
+    jumpBufferUntil = 0;
+    player.vy = CHASE_JUMP_VEL;
+    player.onGround = false;
+  }
+
+  if (!player.onGround) {
+    player.vy += CHASE_GRAVITY * dt;
+    player.y += player.vy * dt;
+    if (player.y + player.h >= CHASE_DECK_Y) {
+      player.y = CHASE_DECK_Y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+  }
+
+  // spawn obstacles
+  if (ch.scrollX - ch.lastObstacleAt > CHASE_OBSTACLE_GAP) {
+    ch.lastObstacleAt = ch.scrollX;
+    const kind = Math.random();
+    if (kind < 0.4) {
+      ch.obstacles.push({ type: 'buoy', x: CANVAS_W + 20, y: CHASE_WATER_Y - 18, w: 20, h: 24, hit: false });
+    } else if (kind < 0.7) {
+      ch.obstacles.push({ type: 'wood', x: CANVAS_W + 20, y: CHASE_WATER_Y - 10, w: 50, h: 12, hit: false });
+    } else {
+      const laneY = CHASE_DECK_Y - 10 - Math.random() * 50;
+      ch.obstacles.push({ type: 'wood', x: CANVAS_W + 20, y: laneY, w: 40, h: 10, hit: false });
+    }
+  }
+
+  for (const ob of ch.obstacles) {
+    ob.x -= CHASE_SCROLL_SPEED * dt;
+  }
+  ch.obstacles = ch.obstacles.filter(ob => ob.x + ob.w > -50);
+
+  // Two-Face's boat appearances
+  const tf = ch.tfBoat;
+  if (!tf.visible && now >= tf.showAt) {
+    tf.visible = true;
+    tf.x = CANVAS_W + 60;
+    tf.hideAt = now + CHASE_TF_VISIBLE_MS;
+    tf.threwGrenade = false;
+  }
+  if (tf.visible) {
+    const targetX = CANVAS_W - 180;
+    tf.x += (targetX - tf.x) * 0.04 * dt;
+    if (now >= tf.hideAt) {
+      tf.x += 4 * dt;
+      if (tf.x > CANVAS_W + 120) {
+        tf.visible = false;
+        tf.showAt = now + CHASE_TF_APPEAR_INTERVAL;
+      }
+    }
+    if (!tf.threwGrenade && tf.x < CANVAS_W - 100) {
+      tf.threwGrenade = true;
+      ch.grenades.push({
+        x: tf.x - 10, y: CHASE_DECK_Y - 40,
+        vx: -CHASE_GRENADE_SPEED, vy: -2,
+        alive: true, bornAt: now,
+      });
+    }
+  }
+
+  // grenades
+  for (const g of ch.grenades) {
+    if (!g.alive) continue;
+    g.x += g.vx * dt;
+    g.vy += 0.15 * dt;
+    g.y += g.vy * dt;
+    if (g.y >= CHASE_WATER_Y - 4) {
+      g.alive = false;
+      ch.explosions.push({ x: g.x, y: CHASE_WATER_Y - 10, born: now });
+      ch.splashes.push({ x: g.x, born: now });
+    }
+  }
+  ch.grenades = ch.grenades.filter(g => g.alive || false);
+
+  // explosion collision
+  for (const ex of ch.explosions) {
+    const age = now - ex.born;
+    if (age < 300) {
+      const r = 30 + age * 0.15;
+      const dx = (player.x + player.w / 2) - ex.x;
+      const dy = (player.y + player.h / 2) - ex.y;
+      if (dx * dx + dy * dy < r * r && Date.now() >= invulnUntil) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+    }
+  }
+  ch.explosions = ch.explosions.filter(ex => now - ex.born < 600);
+  ch.splashes = ch.splashes.filter(sp => now - sp.born < 500);
+
+  // obstacle collision with player
+  for (const ob of ch.obstacles) {
+    if (ob.hit) continue;
+    if (player.x + player.w > ob.x && player.x < ob.x + ob.w &&
+        player.y + player.h > ob.y && player.y < ob.y + ob.h) {
+      ob.hit = true;
+      if (Date.now() >= invulnUntil) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+    }
+  }
+
+  // win condition
+  if (ch.dist >= CHASE_TARGET_DIST) {
+    ch.finished = true;
+    completeLevel();
+  }
+}
+
+function renderChase(t) {
+  const ch = level.chase;
+  const shake = currentShakeOffset(t);
+
+  // sky
+  const g = ctx.createLinearGradient(0, 0, 0, CHASE_WATER_Y);
+  g.addColorStop(0, '#0b1628');
+  g.addColorStop(0.5, '#162540');
+  g.addColorStop(1, '#1a3555');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // stars
+  for (let i = 0; i < 30; i++) {
+    const sx = (hash01(i * 7.3) * CANVAS_W + ch.scrollX * 0.02) % CANVAS_W;
+    const sy = hash01(i * 3.1) * 120;
+    ctx.fillStyle = `rgba(220,230,255,${0.15 + hash01(i * 1.7) * 0.5})`;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+
+  // moon
+  ctx.fillStyle = '#eceadb';
+  ctx.beginPath(); ctx.arc(640, 55, 22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0b1628';
+  ctx.beginPath(); ctx.arc(652, 48, 22, 0, Math.PI * 2); ctx.fill();
+
+  // parallax skyline
+  const skyOff = ch.scrollX * 0.15;
+  ctx.fillStyle = '#0a0f1e';
+  drawSkylineRow(skyOff, CHASE_WATER_Y - 40, 60, 80, 3.7, false, t, '#0a0f1e');
+  ctx.fillStyle = '#101828';
+  drawSkylineRow(skyOff * 1.5, CHASE_WATER_Y - 20, 45, 60, 7.3, true, t, '#101828');
+
+  ctx.save();
+  ctx.translate(shake.x, shake.y);
+
+  // water
+  const wg = ctx.createLinearGradient(0, CHASE_WATER_Y, 0, CANVAS_H);
+  wg.addColorStop(0, '#0a2740');
+  wg.addColorStop(1, '#061520');
+  ctx.fillStyle = wg;
+  ctx.fillRect(0, CHASE_WATER_Y, CANVAS_W, CANVAS_H - CHASE_WATER_Y);
+
+  // wave ripples
+  ctx.strokeStyle = 'rgba(127,212,255,0.15)';
+  ctx.lineWidth = 1;
+  for (let row = 0; row < 5; row++) {
+    const wy = CHASE_WATER_Y + 8 + row * 14;
+    ctx.beginPath();
+    for (let x = 0; x <= CANVAS_W; x += 12) {
+      const yy = wy + Math.sin((x + t / 35 + row * 40 - ch.scrollX * 0.3) / 30) * 2.5;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+
+  // surface foam line
+  ctx.fillStyle = 'rgba(180,220,255,0.2)';
+  ctx.fillRect(0, CHASE_WATER_Y, CANVAS_W, 3);
+
+  // obstacles
+  for (const ob of ch.obstacles) {
+    if (ob.type === 'buoy') {
+      const bob = Math.sin(t / 300 + ob.x * 0.05) * 3;
+      ctx.fillStyle = '#cc3333';
+      ctx.beginPath();
+      ctx.arc(ob.x + 10, ob.y + 8 + bob, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(ob.x + 7, ob.y + 4 + bob, 6, 3);
+      ctx.fillStyle = '#777';
+      ctx.fillRect(ob.x + 9, ob.y - 6 + bob, 2, 10);
+    } else {
+      ctx.fillStyle = '#5a3a1a';
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeStyle = '#3a2a0e';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      for (let lx = 8; lx < ob.w - 4; lx += 12) {
+        ctx.beginPath();
+        ctx.moveTo(ob.x + lx, ob.y);
+        ctx.lineTo(ob.x + lx, ob.y + ob.h);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Two-Face's boat
+  const tf = ch.tfBoat;
+  if (tf.visible) {
+    const tfBob = Math.sin(t / 280) * 2;
+    drawChaseTFBoat(tf.x, CHASE_WATER_Y - 30 + tfBob, t);
+  }
+
+  // grenades
+  for (const gr of ch.grenades) {
+    if (!gr.alive) continue;
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.arc(gr.x, gr.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff6633';
+    ctx.beginPath();
+    ctx.arc(gr.x, gr.y - 6, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // explosions
+  const now = performance.now();
+  for (const ex of ch.explosions) {
+    const age = now - ex.born;
+    const r = 10 + age * 0.2;
+    const alpha = Math.max(0, 1 - age / 600);
+    ctx.fillStyle = `rgba(255,120,30,${alpha * 0.7})`;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255,220,80,${alpha * 0.5})`;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r * 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // splashes
+  for (const sp of ch.splashes) {
+    const age = now - sp.born;
+    const alpha = Math.max(0, 1 - age / 500);
+    ctx.strokeStyle = `rgba(180,220,255,${alpha * 0.6})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI + (i / 4) * Math.PI;
+      const dist = 8 + age * 0.08;
+      ctx.beginPath();
+      ctx.moveTo(sp.x + Math.cos(ang) * dist * 0.3, sp.y);
+      ctx.lineTo(sp.x + Math.cos(ang) * dist, sp.y + Math.sin(ang) * dist * 0.5);
+      ctx.stroke();
+    }
+  }
+
+  // bat-boat
+  const boatBob = Math.sin(t / 240) * 2;
+  drawChaseBatBoat(ch.batBoatX, CHASE_WATER_Y - 18 + boatBob, t);
+
+  // player on the bat-boat
+  if (Date.now() >= invulnUntil || Math.floor(Date.now() / 100) % 2 !== 0) {
+    const px = player.x, py = player.y + boatBob;
+    ctx.save();
+    ctx.translate(px + player.w / 2, py);
+    ctx.scale(player.facing, 1);
+    ctx.translate(-player.w / 2, 0);
+    const w = player.w, h = player.h;
+    // cape
+    ctx.fillStyle = '#0d0f18';
+    ctx.beginPath();
+    ctx.moveTo(-2, 10); ctx.lineTo(-8, h - 4); ctx.lineTo(w + 8, h - 4); ctx.lineTo(w + 2, 10);
+    ctx.closePath(); ctx.fill();
+    // cowl
+    ctx.fillStyle = '#131722';
+    ctx.beginPath();
+    ctx.moveTo(3, 10); ctx.lineTo(0, 0); ctx.lineTo(5, 4);
+    ctx.lineTo(w / 2, -2); ctx.lineTo(w - 5, 4); ctx.lineTo(w, 0); ctx.lineTo(w - 3, 10);
+    ctx.closePath(); ctx.fill();
+    // face
+    ctx.fillStyle = '#e8b88a';
+    ctx.fillRect(5, 10, w - 10, 7);
+    // eyes
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(7, 12, 4, 2.5);
+    ctx.fillRect(w - 11, 12, 4, 2.5);
+    // suit
+    ctx.fillStyle = '#1a1d2e';
+    ctx.fillRect(3, 17, w - 6, h - 23);
+    // belt
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(4, h - 12, w - 8, 3);
+    // legs
+    ctx.fillStyle = '#131722';
+    ctx.fillRect(5, h - 9, 5, 9);
+    ctx.fillRect(w - 10, h - 9, 5, 9);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // progress bar
+  const pct = Math.min(1, ch.dist / CHASE_TARGET_DIST);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(50, 14, CANVAS_W - 100, 10);
+  ctx.fillStyle = '#29d985';
+  ctx.fillRect(50, 14, (CANVAS_W - 100) * pct, 10);
+  ctx.strokeStyle = '#8fa3d9';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(50, 14, CANVAS_W - 100, 10);
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${Math.round(pct * 100)}%`, CANVAS_W / 2, 22);
+
+  // HUD
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`VIDAS: ${lives}`, 10, 42);
+  ctx.textAlign = 'right';
+  ctx.fillText(`NIVEL: ${level.name}`, CANVAS_W - 10, 42);
+
+  // intro overlay
+  if (ch.introTimer > 0) {
+    renderChaseIntro(t, ch);
+  }
+
+  // level complete overlay
+  if (state === 'levelcomplete') {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('¡PERSECUCIÓN COMPLETADA!', CANVAS_W / 2, CANVAS_H / 2 - 10);
+    ctx.fillStyle = '#29d985';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('Robin ha sido rescatado', CANVAS_W / 2, CANVAS_H / 2 + 24);
+  }
+}
+
+function renderChaseIntro(t, ch) {
+  const alpha = Math.min(1, ch.introTimer / 500);
+  ctx.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Two-Face's boat with Robin visible during intro
+  const introPhase = (CHASE_INTRO_MS - ch.introTimer) / CHASE_INTRO_MS;
+  const tfX = CANVAS_W * 0.55 + introPhase * 200;
+  const tfY = CHASE_WATER_Y - 30;
+  drawChaseTFBoat(tfX, tfY, t);
+  drawRobinSprite(tfX + 40, tfY - 30, 0.6, true, Math.sin(t / 200) * 0.08);
+
+  ctx.fillStyle = 'rgba(8,10,20,0.92)';
+  ctx.fillRect(60, CANVAS_H - 120, CANVAS_W - 120, 100);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(60, CANVAS_H - 120, CANVAS_W - 120, 100);
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ACTO 2 — LA PERSECUCIÓN', CANVAS_W / 2, CANVAS_H - 96);
+
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = '12px monospace';
+  ctx.fillText('¡Dos Caras se lleva a Robin en su lancha!', CANVAS_W / 2, CANVAS_H - 72);
+  ctx.fillText('Esquivá los obstáculos y las granadas para alcanzarlo.', CANVAS_W / 2, CANVAS_H - 54);
+
+  if (Math.floor(t / 500) % 2 === 0 && ch.introTimer < CHASE_INTRO_MS - 500) {
+    ctx.fillStyle = '#29d985';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('PREPARATE...', CANVAS_W / 2, CANVAS_H - 32);
+  }
+}
+
+function drawChaseBatBoat(x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  // hull
+  ctx.fillStyle = '#1a1d2e';
+  ctx.beginPath();
+  ctx.moveTo(-8, 18);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(90, 0);
+  ctx.lineTo(105, 8);
+  ctx.lineTo(100, 18);
+  ctx.closePath();
+  ctx.fill();
+  // deck
+  ctx.fillStyle = '#242a3e';
+  ctx.fillRect(4, -2, 82, 4);
+  // bat-symbol on hull
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.moveTo(40, 6); ctx.lineTo(44, 3); ctx.lineTo(48, 5); ctx.lineTo(52, 3); ctx.lineTo(56, 6);
+  ctx.lineTo(54, 10); ctx.lineTo(48, 8); ctx.lineTo(42, 10);
+  ctx.closePath();
+  ctx.fill();
+  // windshield
+  ctx.fillStyle = 'rgba(100,180,255,0.3)';
+  ctx.beginPath();
+  ctx.moveTo(72, -2); ctx.lineTo(78, -10); ctx.lineTo(84, -10); ctx.lineTo(84, -2);
+  ctx.closePath();
+  ctx.fill();
+  // wake
+  ctx.strokeStyle = 'rgba(180,220,255,0.3)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const wx = -10 - i * 12;
+    ctx.beginPath();
+    ctx.moveTo(wx, 16 + i * 3);
+    ctx.lineTo(wx - 15, 18 + i * 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawChaseTFBoat(x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  // hull — darker, menacing
+  ctx.fillStyle = '#2a1a3a';
+  ctx.beginPath();
+  ctx.moveTo(-10, 22);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(100, 0);
+  ctx.lineTo(118, 10);
+  ctx.lineTo(112, 22);
+  ctx.closePath();
+  ctx.fill();
+  // deck
+  ctx.fillStyle = '#3a2a4a';
+  ctx.fillRect(5, -3, 90, 5);
+  // half-face symbol
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(50, 10, 7, -Math.PI / 2, Math.PI / 2);
+  ctx.fill();
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(50, 10, 7, Math.PI / 2, -Math.PI / 2);
+  ctx.fill();
+  // Two-Face standing
+  drawTwoFaceSprite(x > 0 ? 60 : 55, -52, 0.65, Math.sin(t / 200) * 1.5);
+  // wake
+  ctx.strokeStyle = 'rgba(180,220,255,0.25)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(116 + i * 8, 12 + i * 3);
+    ctx.lineTo(126 + i * 12, 15 + i * 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function update(dt) {
   if (state === 'playing') {
     updatePlaying(dt);
@@ -1434,8 +1931,8 @@ function update(dt) {
       } else {
         state = 'win';
         const arma = currentGadget === 'batigarra' ? 'batigarra' : 'batarang';
-        showOverlay('MUELLES CONQUISTADOS',
-          `Con la ${arma} en mano, Batman limpió los muelles de Gotham. Two-Face no puede esconderse para siempre... la historia continúa en el ACTO 3. Puntaje: ${score} con ${coinsCollected} monedas.`,
+        showOverlay('¡ROBIN RESCATADO!',
+          `Batman alcanzó la lancha de Dos Caras y rescató a Robin. Con la ${arma} en mano, limpió los muelles de Gotham. Puntaje: ${score} con ${coinsCollected} monedas. La historia continúa en el ACTO 3...`,
           'JUGAR DE NUEVO');
       }
     }
@@ -3974,6 +4471,8 @@ function drawHeroMessage() {
 }
 
 function render(t) {
+  if (level.chase) { renderChase(t); return; }
+
   // Bane's landing gives the whole view a brief jolt; restored at the end
   // of the frame so it never leaks into the persistent camera position.
   const origCamX = camera.x, origCamY = camera.y;

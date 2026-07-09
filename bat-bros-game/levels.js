@@ -285,6 +285,22 @@ const LEVEL_SPECS = [
     bats: [[45, 17]],
     spawn: { x: 2, y: 19 },
   },
+  {
+    name: '2-3',
+    chase: true,
+    dock: true,
+    width: 25, height: 15, groundY: 13,
+    pits: [],
+    platforms: [],
+    walls: [],
+    houses: [],
+    swingPoints: [],
+    coins: [],
+    thugs: [],
+    birds: [],
+    bats: [],
+    spawn: { x: 3, y: 10 },
+  },
 ];
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
