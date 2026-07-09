@@ -1715,19 +1715,28 @@ function updateChase(dt, now) {
     player.y = ch.batBoatY - 16 - player.h;
   }
 
-  // spawn obstacles from above
-  const gap = CHASE_OBSTACLE_GAP / ch.speedMul;
+  // spawn obstacles from above — barriers get extra spacing so consecutive
+  // jump traps don't overlap in the air (unfair at high speed)
+  const lastWasBarrier = ch.lastObstacleType === 'full_barrier' || ch.lastObstacleType === 'half_barrier';
+  const gap = (CHASE_OBSTACLE_GAP / ch.speedMul) * (lastWasBarrier ? 1.8 : 1);
   if (ch.scrollY - ch.lastObstacleAt > gap) {
     ch.lastObstacleAt = ch.scrollY;
     const laneX = CHASE_LANE_LEFT + Math.random() * (CHASE_LANE_RIGHT - CHASE_LANE_LEFT);
-    const kind = Math.random();
+    // if the last spawn was a barrier, next must be a small obstacle so the
+    // player has time to land and re-orient before the next jump
+    let kind = Math.random();
+    if (lastWasBarrier) kind = Math.random() * 0.60;
+    let type;
     if (kind < 0.25) {
       ch.obstacles.push({ type: 'buoy', x: laneX, y: -30, w: 22, h: 22, hit: false });
+      type = 'buoy';
     } else if (kind < 0.45) {
       const w = 40 + Math.random() * 30;
       ch.obstacles.push({ type: 'wood', x: laneX - w / 2, y: -20, w, h: 12, hit: false });
+      type = 'wood';
     } else if (kind < 0.60) {
       ch.obstacles.push({ type: 'barrel', x: laneX, y: -30, w: 24, h: 24, hit: false });
+      type = 'barrel';
     } else if (kind < 0.80) {
       // half-barrier: wooden fence with a gap on one side
       const gapSide = Math.random() < 0.5 ? 'left' : 'right';
@@ -1735,10 +1744,13 @@ function updateChase(dt, now) {
       const halfW = bw * 0.55;
       const bx = gapSide === 'left' ? CHASE_LANE_LEFT + bw - halfW : CHASE_LANE_LEFT;
       ch.obstacles.push({ type: 'half_barrier', x: bx, y: -20, w: halfW, h: 14, hit: false, gapSide });
+      type = 'half_barrier';
     } else {
       // full barrier: must jump over
       ch.obstacles.push({ type: 'full_barrier', x: CHASE_LANE_LEFT - 10, y: -20, w: CHASE_LANE_RIGHT - CHASE_LANE_LEFT + 50, h: 14, hit: false });
+      type = 'full_barrier';
     }
+    ch.lastObstacleType = type;
   }
 
   for (const ob of ch.obstacles) ob.y += speed * dt;
