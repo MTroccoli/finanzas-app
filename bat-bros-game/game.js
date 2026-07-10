@@ -526,6 +526,29 @@ function loadLevel(idx) {
   // Armor upgrade: force every fresh level spawn back up to big
   if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
+  // Act 2 Batcave return: Batman walks in with Robin at his side, and
+  // Alfred is waiting halfway to the batcomputer with the news.
+  if (level.cave && postTwoFaceReturn) {
+    const cv = level.cave;
+    cv.act2Return = true;
+    cv.alfred = {
+      x: cv.computerX - 220,
+      y: cv.plateauY - 42,
+      triggered: false,
+      dialogPage: 0,
+    };
+    cv.companion = {
+      x: player.x - 34,
+      y: player.y,
+      facing: 1,
+      walkPhase: 0,
+    };
+    cv.tvOn = false;
+    cv.tvX = cv.computerX - 350;
+    cv.tvY = cv.plateauY - 130;
+    cv.tvW = 140;
+    cv.tvH = 90;
+  }
   updateWeaponButton(); // keep the gadget's controls visible across levels
   snapCameraToPlayer();
   timeLeft = LEVEL_TIME;
@@ -1579,6 +1602,30 @@ function updatePlaying(dt) {
   // of making Batman hop.
   if (level.cave) {
     const cv = level.cave;
+    // Act 2 return: Robin walks in with Batman and follows him around the
+    // cave; Alfred is waiting between the entrance and the batcomputer.
+    if (cv.act2Return && cv.companion) {
+      const comp = cv.companion;
+      // stay ~34 px behind Batman on the same y band
+      const targetX = player.x - player.facing * 34;
+      const dx = targetX - comp.x;
+      const speedCap = 3.6;
+      const step = Math.max(-speedCap, Math.min(speedCap, dx * 0.12)) * dt;
+      comp.x += step;
+      comp.y = player.y; // ride the same platform / floor
+      if (Math.abs(step) > 0.4) comp.walkPhase += Math.abs(step) * 0.06;
+      comp.facing = dx > 0 ? 1 : (dx < 0 ? -1 : comp.facing);
+    }
+    if (cv.act2Return && cv.alfred && !cv.alfred.triggered) {
+      const dx = Math.abs(player.x + player.w / 2 - cv.alfred.x);
+      if (dx < 60) {
+        cv.alfred.triggered = true;
+        cv.alfred.dialogPage = 0;
+        player.vx = 0;
+        state = 'alfredDialog';
+        return;
+      }
+    }
     // no onGround gate: the player rests exactly on a tile boundary here, so
     // onGround flickers frame to frame — proximity alone is the trigger, and
     // this runs before the jump code so the press opens the PC, not a hop
@@ -3033,6 +3080,110 @@ function drawCaveBackground(t) {
 function drawCaveProps(t) {
   const cv = level.cave;
   const cy = (wy) => wy - camera.y;
+
+  // Act 2 return: wall-mounted TV. On until Alfred delivers his line,
+  // then it flips to the frozen-Gotham news feed for the rest of the
+  // Batcave visit. Drawn behind the trophies so nothing feels layered
+  // in front of it.
+  if (cv.act2Return && cv.tvX != null) {
+    const tx = cv.tvX - camera.x;
+    const ty = cv.tvY - camera.y;
+    const w = cv.tvW, h = cv.tvH;
+    // wall bracket
+    ctx.fillStyle = '#2a2f3a';
+    ctx.fillRect(tx - 4, ty - 4, w + 8, h + 24);
+    ctx.fillStyle = '#101623';
+    ctx.fillRect(tx, ty, w, h);
+    if (!cv.tvOn) {
+      // static — dead grey with noise before Alfred's line
+      ctx.fillStyle = '#2a2f3a';
+      ctx.fillRect(tx + 3, ty + 3, w - 6, h - 6);
+      for (let i = 0; i < 30; i++) {
+        const sx = tx + 3 + hash01(i + Math.floor(t / 90)) * (w - 6);
+        const sy = ty + 3 + hash01(i * 3 + Math.floor(t / 90)) * (h - 6);
+        ctx.fillStyle = `rgba(255,255,255,${0.2 + 0.5 * hash01(i * 7)})`;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+    } else {
+      // frozen Gotham news feed
+      const sg = ctx.createLinearGradient(0, ty, 0, ty + h);
+      sg.addColorStop(0, '#0d1830');
+      sg.addColorStop(0.6, '#264a6a');
+      sg.addColorStop(1, '#7fb5c8');
+      ctx.fillStyle = sg;
+      ctx.fillRect(tx + 3, ty + 3, w - 6, h - 6);
+      // snowy skyline
+      const base = ty + h - 22;
+      for (let i = 0; i < 6; i++) {
+        const bx = tx + 5 + i * ((w - 10) / 6);
+        const bw = ((w - 10) / 6) - 3;
+        const bh = 22 + hash01(i * 2.3) * 30;
+        ctx.fillStyle = '#0f1728';
+        ctx.fillRect(bx, base - bh, bw, bh);
+        ctx.fillStyle = '#f0f4ff';
+        ctx.fillRect(bx - 1, base - bh - 2, bw + 2, 3);
+      }
+      // frozen ground
+      ctx.fillStyle = '#c5dcea';
+      ctx.fillRect(tx + 3, base, w - 6, 6);
+      // falling snow
+      for (let i = 0; i < 14; i++) {
+        const fx = tx + 3 + ((hash01(i * 11.3) * (w - 6) + t * 0.03) % (w - 6));
+        const fy = ty + 3 + ((hash01(i * 4.7) * (h - 6) + t * 0.05) % (h - 6));
+        ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.4 * hash01(i * 3.9)})`;
+        ctx.fillRect(fx, fy, 1.5, 1.5);
+      }
+      // red crawler, clipped to its bar
+      const barY = ty + h - 12;
+      ctx.fillStyle = '#c0392b';
+      ctx.fillRect(tx + 3, barY, w - 6, 10);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(tx + 3, barY, w - 6, 10);
+      ctx.clip();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'left';
+      const crawl = 'GOTHAM CONGELADA — Mr. FREEZE avanza — -40°C — ';
+      const gw = 5.5;
+      const cyc = crawl.length * gw;
+      const off = (t / 40) % cyc;
+      ctx.fillText(crawl + crawl, tx + 5 - off, barY + 8);
+      ctx.restore();
+      // GCN bug
+      ctx.fillStyle = '#f6d743';
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('GCN', tx + w - 5, ty + 12);
+      ctx.textAlign = 'left';
+    }
+    // power light
+    ctx.fillStyle = cv.tvOn ? '#3adf6a' : '#4a1616';
+    ctx.beginPath(); ctx.arc(tx + w - 5, ty + h + 8, 2.4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Alfred waits between the entrance and the batcomputer with the news
+  if (cv.act2Return && cv.alfred) {
+    const ax = cv.alfred.x - camera.x - 12;
+    const ay = cv.alfred.y - camera.y;
+    drawAlfredSprite(ax, ay, 1.0);
+    // "!" prompt over his head until he's talked
+    if (!cv.alfred.triggered) {
+      ctx.fillStyle = '#ffd166';
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', ax + 12, ay - 6 + Math.sin(t / 260) * 2);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Robin follows Batman around
+  if (cv.companion) {
+    const rx = cv.companion.x - camera.x;
+    const ry = cv.companion.y - camera.y;
+    const bob = Math.sin(cv.companion.walkPhase) * 1.5;
+    drawRobinSprite(rx - 12, ry - 24 + bob, 0.7, false, 0);
+  }
 
   // entrance arch at the far left, on the ground
   const ex = cv.entranceX - camera.x;
@@ -5233,13 +5384,65 @@ function drawTwoFace(t) {
   const bw = tf.w, bh = tf.h;
 
   if (!tf.alive) {
-    // KO puddle
-    ctx.fillStyle = '#555';
-    ctx.fillRect(px + 2, py + bh - 12, bw - 4, 12);
-    ctx.fillStyle = '#eee';
+    // KO'd flat on the arena floor, split navy/purple suit + two-tone
+    // face visible — same silhouette Bane gets when he goes down
+    const floorY = tf.floorRow * TILE - camera.y;
+    const cx = px + bw / 2;
+    // legs sprawled
+    ctx.fillStyle = '#1a1a2e';
     ctx.beginPath();
-    ctx.arc(px + bw / 2, py + bh - 14, 8, 0, Math.PI * 2);
+    ctx.ellipse(cx - 18, floorY - 6, 18, 8, 0.15, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = '#3d2a5e';
+    ctx.beginPath();
+    ctx.ellipse(cx + 18, floorY - 6, 18, 8, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+    // torso — two-tone jacket
+    ctx.fillStyle = '#242f4d';
+    ctx.beginPath();
+    ctx.ellipse(cx - 10, floorY - 16, 22, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5a2d8c';
+    ctx.beginPath();
+    ctx.ellipse(cx + 10, floorY - 16, 22, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // white shirt strip
+    ctx.fillStyle = '#e8e0d0';
+    ctx.fillRect(cx - 4, floorY - 26, 8, 18);
+    // head — pale left, purple/scarred right — laid sideways
+    ctx.fillStyle = '#f0d6b0';
+    ctx.beginPath();
+    ctx.arc(cx - 22, floorY - 22, 11, Math.PI * 0.5, Math.PI * 1.5);
+    ctx.fill();
+    ctx.fillStyle = '#6a3a6a';
+    ctx.beginPath();
+    ctx.arc(cx - 22, floorY - 22, 11, -Math.PI * 0.5, Math.PI * 0.5);
+    ctx.fill();
+    // knocked-out X eyes
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 28, floorY - 25); ctx.lineTo(cx - 24, floorY - 21);
+    ctx.moveTo(cx - 28, floorY - 21); ctx.lineTo(cx - 24, floorY - 25);
+    ctx.stroke();
+    ctx.strokeStyle = '#1a0a1a';
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, floorY - 25); ctx.lineTo(cx - 16, floorY - 21);
+    ctx.moveTo(cx - 20, floorY - 21); ctx.lineTo(cx - 16, floorY - 25);
+    ctx.stroke();
+    // the trademark coin resting next to him
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.ellipse(cx + 30, floorY - 5, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b8860b';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#b8860b';
+    ctx.font = 'bold 7px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('$', cx + 30, floorY - 3);
+    ctx.textAlign = 'left';
     return;
   }
 
@@ -5646,10 +5849,10 @@ function drawRescueScene(now) {
   ctx.fillStyle = '#dbe4ff';
   ctx.font = '13px monospace';
   let line1, line2;
-  if (t < 1500) {
+  if (t < 3000) {
     line1 = 'Batman corta la última soga con la Batigarra...';
     line2 = 'y baja la jaula suavemente hasta el piso.';
-  } else if (t < 3000) {
+  } else if (t < 6000) {
     line1 = 'Robin: —Justo a tiempo. Sabía que vendrías.';
     line2 = 'Batman: —Nunca solo, compañero.';
   } else {
@@ -5761,15 +5964,24 @@ function drawAlfredNewsScene(now) {
     ctx.fillRect(fx, fy, 2, 2);
   }
 
-  // NEWS crawl at the bottom of the TV screen
+  // NEWS crawl at the bottom of the TV screen — the scrolling text is
+  // clipped to the red bar so it never spills onto the TV bezel
+  const barX = tvX + 4, barY = tvY + tvH - 26, barW = tvW - 8, barH = 22;
   ctx.fillStyle = '#c0392b';
-  ctx.fillRect(tvX + 4, tvY + tvH - 26, tvW - 8, 22);
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(barX, barY, barW, barH);
+  ctx.clip();
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 12px monospace';
   ctx.textAlign = 'left';
   const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — ';
-  const offset = (t / 30) % (crawl.length * 8);
-  ctx.fillText(crawl + crawl, tvX + 10 - offset, tvY + tvH - 10);
+  const glyphW = 8;
+  const cycleW = crawl.length * glyphW;
+  const offset = (t / 30) % cycleW;
+  ctx.fillText(crawl + crawl, barX + 6 - offset, barY + barH - 6);
+  ctx.restore();
 
   // TV frame + power light + station bug
   ctx.fillStyle = '#f6d743';
@@ -5813,6 +6025,46 @@ function drawAlfredNewsScene(now) {
     ? '—¿Han visto las noticias, señores?'
     : '—Gotham se congela. Mr. Freeze está sembrando el pánico.';
   ctx.fillText(line, CANVAS_W / 2, boxY2 + 46);
+  ctx.textAlign = 'left';
+}
+
+// In-world dialog with Alfred by the batcave. Batman + Robin + Alfred
+// keep rendering behind (drawn by drawCaveProps). Advance with a tap.
+function drawAlfredDialog(now) {
+  const cv = level.cave;
+  const page = cv && cv.alfred ? cv.alfred.dialogPage : 0;
+  const lines = [
+    ['ALFRED', '—¿Han visto las noticias, señores?'],
+    ['ALFRED', '—Gotham amaneció bajo un manto de hielo.'],
+    ['ALFRED', '—Mr. Freeze salió del Arkham y congela lo que toca.'],
+    ['ALFRED', '—A la Batcomputadora — habrá que preparar la respuesta.'],
+  ];
+  const [who, text] = lines[Math.min(page, lines.length - 1)];
+
+  ctx.fillStyle = 'rgba(2,4,10,0.35)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const boxW = 660, boxH = 84;
+  const boxX = (CANVAS_W - boxW) / 2, boxY = CANVAS_H - boxH - 18;
+  ctx.fillStyle = 'rgba(6,8,16,0.94)';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(who, boxX + 18, boxY + 26);
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = '13px monospace';
+  ctx.fillText(text, boxX + 18, boxY + 50);
+
+  ctx.fillStyle = '#9fb4d8';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'right';
+  const arrow = Math.sin(now / 260) > 0 ? '▼' : '▽';
+  ctx.fillText(`SALTO — continuar  ${arrow}`, boxX + boxW - 18, boxY + boxH - 12);
   ctx.textAlign = 'left';
 }
 
@@ -6096,23 +6348,29 @@ function loop(now) {
   } else if (state === 'rescue') {
     render(now);
     drawRescueScene(now);
-    if (now - rescueStart > 4500) {
+    // 9 s so each pair of lines can be read comfortably, or tap to skip
+    const skip = now < jumpBufferUntil || now < shootBufferUntil;
+    if (now - rescueStart > 9000 || skip) {
+      jumpBufferUntil = 0; shootBufferUntil = 0;
       postTwoFaceReturn = true;
       const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
       loadLevel(caveIdx);
-      state = 'alfredNews';
-      alfredStart = performance.now();
+      // Batman + Robin walk into the cave normally — Alfred is waiting
+      // in-world between them and the batcomputer; no overlay cutscene.
+      state = 'playing';
     }
-  } else if (state === 'alfredNews') {
+  } else if (state === 'alfredDialog') {
     render(now);
-    drawAlfredNewsScene(now);
-    // hold on Alfred's briefing; a tap/click skips to the choice screen
-    const advance = now < jumpBufferUntil || now < shootBufferUntil ||
-      (now - alfredStart > 6500);
-    if (advance) {
+    drawAlfredDialog(now);
+    // tap to advance to the next line, or wrap back to gameplay
+    if (now < jumpBufferUntil || now < shootBufferUntil) {
       jumpBufferUntil = 0; shootBufferUntil = 0;
-      state = 'choice';
-      if (level.cave) level.cave.choiceSel = 0;
+      const cv = level.cave;
+      cv.alfred.dialogPage++;
+      if (cv.alfred.dialogPage >= 4) {
+        cv.tvOn = true;
+        state = 'playing';
+      }
     }
   } else if (state === 'computer' || state === 'choice' || state === 'levelselect') {
     // Batcave UI: the frozen scene stays behind the expediente / choice /
