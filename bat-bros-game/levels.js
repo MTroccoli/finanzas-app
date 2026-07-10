@@ -307,28 +307,41 @@ const LEVEL_SPECS = [
     dock: true,
     width: 20, height: 32, groundY: 30,
     pits: [],
-    // Single vertical ladder up the center. Container stacks on the
-    // sides narrow catwalks 2, 3 and 5, shortening patrol distances so
-    // thugs cross the ladder shaft more frequently. Double and triple
-    // patrols on every catwalk; only two rest zones.
+    // Single vertical ladder up the center. Cargo pillars stack from
+    // the ship's floor up to the engine-room arena, framing every
+    // catwalk with real walls of freight. Narrow catwalks 2, 3 and 5
+    // shorten patrol distances so thugs cross the ladder shaft more
+    // frequently.
     platforms: [
       { x: 2, y: 27, w: 16 },                      // catwalk 1
-      { x: 4, y: 24, w: 12 },                      // catwalk 2 (narrow — containers)
+      { x: 4, y: 24, w: 12 },                      // catwalk 2 (narrow)
       { x: 3, y: 21, w: 4 }, { x: 13, y: 21, w: 4 }, // rest zone 1
       { x: 4, y: 18, w: 12 },                      // catwalk 3 (narrow — triple patrol)
       { x: 2, y: 15, w: 16 },                      // catwalk 4
       { x: 3, y: 12, w: 4 }, { x: 13, y: 12, w: 4 }, // rest zone 2 + checkpoint
       { x: 4, y: 9, w: 12 },                       // catwalk 5 (narrow — final gauntlet)
-      { x: 1, y: 6, w: 18 },                       // engine-room arena
     ],
     walls: [],
+    // container pillars: 2-wide stacks on both sides, each container 3
+    // tiles tall, rooted on the ship's floor at row 30 and climbing up
+    // to the arena floor at row 7
     houses: [
-      { x: 1, w: 3, topRow: 22, baseRow: 24, style: 'container' },
-      { x: 16, w: 3, topRow: 22, baseRow: 24, style: 'container' },
-      { x: 1, w: 3, topRow: 16, baseRow: 18, style: 'container' },
-      { x: 16, w: 3, topRow: 16, baseRow: 18, style: 'container' },
-      { x: 1, w: 3, topRow: 7, baseRow: 9, style: 'container' },
-      { x: 16, w: 3, topRow: 7, baseRow: 9, style: 'container' },
+      { x: 1, w: 2, topRow: 27, baseRow: 30, style: 'container' },
+      { x: 1, w: 2, topRow: 24, baseRow: 27, style: 'container' },
+      { x: 1, w: 2, topRow: 21, baseRow: 24, style: 'container' },
+      { x: 1, w: 2, topRow: 18, baseRow: 21, style: 'container' },
+      { x: 1, w: 2, topRow: 15, baseRow: 18, style: 'container' },
+      { x: 1, w: 2, topRow: 12, baseRow: 15, style: 'container' },
+      { x: 1, w: 2, topRow: 9, baseRow: 12, style: 'container' },
+      { x: 1, w: 2, topRow: 7, baseRow: 9, style: 'container' },
+      { x: 17, w: 2, topRow: 27, baseRow: 30, style: 'container' },
+      { x: 17, w: 2, topRow: 24, baseRow: 27, style: 'container' },
+      { x: 17, w: 2, topRow: 21, baseRow: 24, style: 'container' },
+      { x: 17, w: 2, topRow: 18, baseRow: 21, style: 'container' },
+      { x: 17, w: 2, topRow: 15, baseRow: 18, style: 'container' },
+      { x: 17, w: 2, topRow: 12, baseRow: 15, style: 'container' },
+      { x: 17, w: 2, topRow: 9, baseRow: 12, style: 'container' },
+      { x: 17, w: 2, topRow: 7, baseRow: 9, style: 'container' },
     ],
     ladders: [
       { x: 9, topRow: 6, baseRow: 30 },
@@ -340,27 +353,35 @@ const LEVEL_SPECS = [
       [5, 11], [14, 11],
     ],
     thugs: [
-      { x: 5, y: 30, range: [2, 18] },                    // ground
-      { x: 14, y: 30, range: [2, 18] },                   // ground (double)
-      { x: 12, y: 27, range: [2, 18], helmet: true },     // catwalk 1
-      { x: 5, y: 27, range: [2, 18] },                    // catwalk 1 (double)
+      { x: 5, y: 30, range: [3, 17] },                    // ground
+      { x: 14, y: 30, range: [3, 17] },                   // ground (double)
+      { x: 12, y: 27, range: [3, 17], helmet: true },     // catwalk 1
+      { x: 5, y: 27, range: [3, 17] },                    // catwalk 1 (double)
       { x: 6, y: 24, range: [4, 16] },                    // catwalk 2 (narrow)
       { x: 12, y: 24, range: [4, 16], helmet: true },     // catwalk 2
       { x: 6, y: 18, range: [4, 16], helmet: true },      // catwalk 3 (narrow)
       { x: 10, y: 18, range: [4, 16] },                   // catwalk 3
       { x: 14, y: 18, range: [4, 16] },                   // catwalk 3 (triple)
-      { x: 5, y: 15, range: [2, 18] },                    // catwalk 4
-      { x: 14, y: 15, range: [2, 18], helmet: true },     // catwalk 4 (double)
+      { x: 5, y: 15, range: [3, 17] },                    // catwalk 4
+      { x: 14, y: 15, range: [3, 17], helmet: true },     // catwalk 4 (double)
       { x: 6, y: 9, range: [4, 16], helmet: true },       // catwalk 5 (narrow)
       { x: 14, y: 9, range: [4, 16], helmet: true },      // catwalk 5
     ],
     birds: [
       { x: 14, y: 20, range: [4, 16] },
-      { x: 6, y: 14, range: [2, 17] },
+      { x: 6, y: 14, range: [3, 17] },
       { x: 5, y: 11, range: [4, 16] },
     ],
     bats: [[14, 12]],
-    twoface: { x: 14, hp: TWOFACE_HP, floorRow: 6, arenaMinX: 7, arenaMaxX: 18, triggerX: 6, robinX: 2 },
+    // Two-Face patrols the right side of the arena. Every few seconds
+    // he advances toward the rope on the left to hack at it — 3 cuts and
+    // Robin's cage plunges into the water tank. Batman must intercept.
+    twoface: {
+      x: 14, hp: TWOFACE_HP, floorRow: 6,
+      arenaMinX: 6, arenaMaxX: 18, triggerX: 5,
+      ropeAnchorCol: 3,
+      tankCol: 1, tankWidthCols: 4,
+    },
     spawn: { x: 2, y: 28 },
   },
 ];

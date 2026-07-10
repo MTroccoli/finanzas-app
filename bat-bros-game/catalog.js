@@ -98,12 +98,16 @@ const CHASE_LANE_RIGHT = 380;
 // --- Two-Face boss (Act 2 boss, level 2-4) ---
 const TWOFACE_HP = 5;
 const TWOFACE_HIT_FLASH_MS = 900;
-const TWOFACE_COIN_FLIP_MS = 2000;
-const TWOFACE_COIN_BARRAGE_COUNT = 8;
-const TWOFACE_COIN_SPEED = 4.5;
-const TWOFACE_THUG_WAVE = 3;
-const TWOFACE_ATTACK_COOLDOWN = 4500;
-const TWOFACE_ROBIN_HP = 3; // hits Robin can take before it's game over
+const TWOFACE_STUN_MS = 1500;                // stagger after Batman lands a hit
+const TWOFACE_ROPE_CUT_INTERVAL = 6500;      // patrol time before he heads for the rope
+const TWOFACE_ROPE_CUT_INTERVAL_RAGE = 3800; // once enraged (hp <= 2)
+const TWOFACE_CUT_ANIMATION_MS = 1400;       // window to interrupt him at the rope
+const TWOFACE_PATROL_SPEED = 1.2;
+const TWOFACE_ADVANCE_SPEED = 2.0;           // walking toward the rope
+const TWOFACE_RAGE_SPEED_MUL = 1.55;
+const TWOFACE_THUG_SPAWN_INTERVAL = 6000;
+const TWOFACE_THUG_SPAWN_INTERVAL_RAGE = 3400;
+const TWOFACE_CAGE_MAX_CUTS = 3;             // 3 cuts and Robin drops into the drink
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -239,31 +243,69 @@ function buildLevel(spec) {
       minX: spec.villain.range[0] * TILE, maxX: spec.villain.range[1] * TILE,
       vx: 1.4, alive: true, hp: spec.villain.hp ?? 3, hitUntil: 0,
     } : null,
-    twoface: twoface ? {
-      x: twoface.x * TILE, homeX: twoface.x * TILE,
-      floorRow: twoface.floorRow ?? 11,
-      y: (twoface.floorRow ?? 11) * TILE - 44,
-      w: 30, h: 44,
-      hp: twoface.hp ?? TWOFACE_HP, maxHp: twoface.hp ?? TWOFACE_HP,
-      vx: 1.2, alive: true, facing: -1,
-      state: 'idle',
-      hitUntil: 0, deadAt: 0,
-      coinFlipAt: 0, coinResult: null, coinAngle: 0,
-      attackCooldown: 0,
-      minX: (twoface.arenaMinX ?? 26) * TILE,
-      maxX: (twoface.arenaMaxX ?? width - 3) * TILE,
-      triggerX: (twoface.triggerX ?? 28) * TILE,
-      barrage: [], spawnedThugs: [],
-      // Robin, tied to a post in the arena: the fight is lost if he
-      // takes TWOFACE_ROBIN_HP hits from coins or the boss's thug waves
-      robin: {
-        x: (twoface.robinX ?? 2) * TILE,
-        y: (twoface.floorRow ?? 11) * TILE - 34,
-        w: 22, h: 34,
-        hp: TWOFACE_ROBIN_HP, maxHp: TWOFACE_ROBIN_HP,
-        hitUntil: 0,
-      },
-    } : null,
+    twoface: twoface ? (() => {
+      const floorRow = twoface.floorRow ?? 11;
+      const floorY = floorRow * TILE;
+      // rope anchor hangs from row 0 (ceiling); cage sits above a raised
+      // water tank on the arena floor. Each rope cut lowers the cage; on
+      // the 3rd cut it falls straight into the water and Robin drowns.
+      const ropeAnchorX = (twoface.ropeAnchorCol ?? 3) * TILE + TILE / 2;
+      const cageW = TILE * 1.6;   // 51px
+      const cageH = TILE * 1.3;   // 42px
+      const waterTopY = floorY - TILE * 1.5;      // tank rises 1.5 tiles above floor
+      const tankLeftPx = (twoface.tankCol ?? 1) * TILE;
+      const tankWidthPx = (twoface.tankWidthCols ?? 4) * TILE;
+      const cageInitialY = TILE * 1.2;            // near the ceiling
+      const cageBottomAtWater = waterTopY - 6;    // where the cage lands after 3 cuts
+      const dropPerCut = (cageBottomAtWater - (cageInitialY + cageH)) / TWOFACE_CAGE_MAX_CUTS;
+      // Two-Face runs to just RIGHT of the rope to hack at it
+      const ropeCutX = ropeAnchorX + 16;
+      return {
+        x: twoface.x * TILE, homeX: twoface.x * TILE,
+        floorRow, y: floorY - 44,
+        w: 30, h: 44,
+        hp: twoface.hp ?? TWOFACE_HP, maxHp: twoface.hp ?? TWOFACE_HP,
+        vx: 1.2, alive: true, facing: -1,
+        state: 'idle',
+        hitUntil: 0, deadAt: 0, stunUntil: 0,
+        cutTimer: 0,     // performance.now() time to start advancing
+        cutStart: 0,     // when the cutting animation began
+        nextThugAt: 0,   // when to spawn the next distraction thug
+        minX: (twoface.arenaMinX ?? 26) * TILE,
+        maxX: (twoface.arenaMaxX ?? width - 3) * TILE,
+        triggerX: (twoface.triggerX ?? 28) * TILE,
+        ropeAnchorX,
+        ropeAnchorY: 0,
+        ropeCutX,
+        // the cage + water tank state
+        cage: {
+          x: ropeAnchorX - cageW / 2, y: cageInitialY,
+          w: cageW, h: cageH,
+          initialY: cageInitialY,
+          dropPerCut,
+          bottomAtWater: cageBottomAtWater,
+          cutsCount: 0,
+          shakeUntil: 0,
+          falling: false, fallStart: 0, fallVy: 0,
+          splashed: false,
+        },
+        water: {
+          x: tankLeftPx, y: waterTopY,
+          w: tankWidthPx, top: waterTopY,
+          floorY,
+          ripples: [],
+        },
+        // Robin tied inside the cage — his sprite renders inside it. He
+        // has no hearts anymore: he drowns instantly if the cage falls in
+        // the tank, which is what the 3 rope cuts count toward.
+        robin: {
+          x: ropeAnchorX - 11, y: cageInitialY + 6,
+          w: 22, h: 34,
+          hitUntil: 0,
+          drowned: false,
+        },
+      };
+    })() : null,
     // gargoyle perches are only meaningful in the Bane warehouse fight
     perches: (indoor && bane) ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
     cave: cave ? buildCaveState(cave, width, height, groundY, solid) : null,

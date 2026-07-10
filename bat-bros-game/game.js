@@ -491,10 +491,21 @@ function updateSwing(dt, now) {
 
 function cameraTargets() {
   const tx = player.x + player.w / 2 - CANVAS_W / 2;
-  const ty = player.y + player.h / 2 - CANVAS_H * 0.55;
+  let ty = player.y + player.h / 2 - CANVAS_H * 0.55;
+  let allowNegativeY = false;
+  // Two-Face arena: pin the arena floor to the bottom of the viewport so
+  // the fight feels like a tall engine-room hall with a high ceiling
+  // overhead. Kicks in once the fight is actually live.
+  if (level.twoface && level.twoface.alive && level.twoface.state !== 'idle') {
+    const floorPx = level.twoface.floorRow * TILE;
+    ty = floorPx + 32 - CANVAS_H;
+    allowNegativeY = true;
+  }
   return {
     x: Math.max(0, Math.min(tx, Math.max(0, level.pixelWidth - CANVAS_W))),
-    y: Math.max(0, Math.min(ty, Math.max(0, level.pixelHeight - CANVAS_H))),
+    y: allowNegativeY
+      ? Math.min(ty, Math.max(0, level.pixelHeight - CANVAS_H))
+      : Math.max(0, Math.min(ty, Math.max(0, level.pixelHeight - CANVAS_H))),
   };
 }
 
@@ -970,14 +981,29 @@ function killPlayer() {
     const tf = level.twoface;
     tf.x = tf.homeX;
     tf.y = tf.floorRow * TILE - tf.h;
-    // re-arm to idle: the fight (and Robin's health) resets for the next
-    // climb — otherwise the boss would maul Robin while Batman is respawning
-    // at the checkpoint far below with no way to defend him
+    // re-arm to idle so the fight (and the rope) resets for the next
+    // climb — otherwise Two-Face would keep hacking at the cage while
+    // Batman respawns at the checkpoint far below with no way to help
     tf.state = 'idle';
-    tf.barrage = [];
-    tf.thugsSpawned = false;
-    tf.barrageSpawned = false;
-    if (tf.robin) { tf.robin.hp = tf.robin.maxHp; tf.robin.hitUntil = 0; }
+    tf.hitUntil = 0;
+    tf.stunUntil = 0;
+    tf.cutTimer = 0;
+    tf.cutStart = 0;
+    tf.nextThugAt = 0;
+    tf._robinDropAt = 0;
+    if (tf.cage) {
+      tf.cage.cutsCount = 0;
+      tf.cage.y = tf.cage.initialY;
+      tf.cage.falling = false;
+      tf.cage.splashed = false;
+      tf.cage.fallVy = 0;
+      tf.cage.shakeUntil = 0;
+    }
+    if (tf.water) tf.water.ripples = [];
+    if (tf.robin) {
+      tf.robin.hitUntil = 0;
+      tf.robin.drowned = false;
+    }
     level.thugs = level.thugs.filter(g => !g.bossSpawn);
   }
 }
@@ -1220,9 +1246,21 @@ function robinKilled() {
   state = 'gameover';
   gameOverCount++;
   if (playerName) saveGameOvers(playerName, gameOverCount);
-  showChoiceMenu(`DOS CARAS ELIMINÓ A ROBIN — la misión falló. Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
+  showChoiceMenu(`ROBIN CAYÓ AL TANQUE — la misión falló. Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
 }
 
+// ---------------------------------------------------------------
+// Two-Face fight (level 2-4)
+//
+// Robin dangles in a cage over a water tank on the arena's left side.
+// Two-Face patrols the right side; every few seconds he advances on the
+// rope and starts a CUT_ANIMATION_MS-long hack. Batman must land a hit
+// during the cut (or before the walk finishes) to stagger him. If he
+// finishes the cut, the cage drops one notch — three cuts and Robin
+// plunges into the tank. Batman needs 5 stomps/batarangs to win. As
+// Two-Face's HP falls he speeds up, spawns thugs faster, and goes for
+// the rope more often.
+// ---------------------------------------------------------------
 function updateTwoFace(dt, now) {
   const tf = level.twoface;
   if (!tf.alive) {
@@ -1230,176 +1268,161 @@ function updateTwoFace(dt, now) {
     return;
   }
 
-  const floorY = tf.floorRow * TILE;
+  const cage = tf.cage;
+  const water = tf.water;
+  const rb = tf.robin;
+  const enraged = tf.hp <= 2;
+
+  // === Cage falling animation (post 3rd cut) — runs regardless of tf state
+  if (cage.falling) {
+    cage.fallVy += 0.55 * dt;
+    cage.y += cage.fallVy * dt;
+    if (!cage.splashed && cage.y + cage.h >= water.top) {
+      cage.splashed = true;
+      cage.y = water.top - cage.h + 4;
+      cage.fallVy = 0;
+      rb.drowned = true;
+      // ripples on impact
+      for (let i = 0; i < 6; i++) {
+        water.ripples.push({ x: water.x + water.w * (0.3 + i * 0.08), r: 4, born: now });
+      }
+      triggerScreenShake(now, 6, 320);
+      // give the splash a beat before the "you lost" screen
+      tf._robinDropAt = now;
+    }
+  }
+  if (tf._robinDropAt && now - tf._robinDropAt > 700) {
+    robinKilled();
+    return;
+  }
+  // keep the ripples alive whether or not the cage fell — Two-Face's cuts
+  // also drip water when the cage shakes
+  for (const r of water.ripples) r.r += 0.6 * dt;
+  water.ripples = water.ripples.filter(r => r.r < 60);
+
+  // sync Robin's sprite to the cage
+  rb.x = cage.x + (cage.w - rb.w) / 2;
+  rb.y = cage.y + 8;
 
   if (tf.state === 'idle') {
-    // triggers when Batman is standing on the arena floor (or above),
-    // not just when he passes the trigger X while still climbing below
     const onArenaFloor = (player.y + player.h) <= (tf.floorRow + 1) * TILE;
     if (player.x > tf.triggerX && onArenaFloor) {
-      tf.state = 'coin_flip';
-      tf.coinFlipAt = now;
-      tf.coinAngle = 0;
+      tf.state = 'patrol';
+      tf.cutTimer = now + TWOFACE_ROPE_CUT_INTERVAL;
+      tf.nextThugAt = now + TWOFACE_THUG_SPAWN_INTERVAL;
+      tf.vx = -Math.abs(TWOFACE_PATROL_SPEED);
     }
     return;
   }
 
-  // Coins in flight and Robin's safety stay live through every boss state
-  // (including the next coin flip) — a barrage keeps raining while he flips.
-  const rb = tf.robin;
-  const hitRobin = () => {
-    if (now < rb.hitUntil) return;
-    rb.hp--;
-    rb.hitUntil = now + 1100;
-    triggerScreenShake(now, 4, 220);
-  };
-  for (const c of tf.barrage) {
-    if (!c.alive) continue;
-    c.x += c.vx * dt;
-    c.vy += 0.12 * dt; // coins arc up out of the flip, then rain down
-    c.y += c.vy * dt;
-    if (c.y > floorY - 4 || c.x < TILE || c.x > level.pixelWidth - TILE) { c.alive = false; continue; }
-    if (aabbOverlap(player, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
-      c.alive = false;
-      hurtPlayer();
-      if (state !== 'playing') return;
+  // === stunned: brief pause after Batman lands a hit
+  if (tf.state === 'stunned') {
+    if (now >= tf.stunUntil) {
+      tf.state = 'patrol';
+      // hits push back the rope timer so Batman gets a breather
+      tf.cutTimer = now + (enraged ? TWOFACE_ROPE_CUT_INTERVAL_RAGE : TWOFACE_ROPE_CUT_INTERVAL);
+      tf.vx = tf.x < (tf.minX + tf.maxX) / 2 ? Math.abs(TWOFACE_PATROL_SPEED) : -Math.abs(TWOFACE_PATROL_SPEED);
     }
-    if (rb && aabbOverlap(rb, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
-      c.alive = false;
-      hitRobin();
-    }
-  }
-  tf.barrage = tf.barrage.filter(c => c.alive);
-
-  // boss-wave thugs maul Robin if they reach him — intercept them in time
-  if (rb) {
-    for (const g of level.thugs) {
-      if (!g.alive || !g.bossSpawn) continue;
-      if (aabbOverlap(rb, g)) hitRobin();
-    }
-    if (rb.hp <= 0) { robinKilled(); return; }
+    // still processes hits below
   }
 
-  if (tf.state === 'coin_flip') {
-    tf.coinAngle += 0.3 * dt;
-    if (now - tf.coinFlipAt >= TWOFACE_COIN_FLIP_MS) {
-      tf.coinResult = Math.random() < 0.5 ? 'thugs' : 'barrage';
-      tf.state = tf.coinResult === 'thugs' ? 'send_thugs' : 'fire_barrage';
-      tf.attackStart = now;
-    }
-    return;
-  }
+  const rageMul = enraged ? TWOFACE_RAGE_SPEED_MUL : 1;
 
-  if (tf.state === 'send_thugs') {
-    if (!tf.thugsSpawned) {
-      tf.thugsSpawned = true;
-      for (let i = 0; i < TWOFACE_THUG_WAVE; i++) {
-        const sx = tf.x - 30 - i * 40;
-        level.thugs.push({
-          x: sx, y: floorY - 26, w: 24, h: 26,
-          // their patrol reaches Robin's post: left unchecked they maul him
-          minX: tf.robin ? tf.robin.x - TILE : tf.minX, maxX: tf.maxX,
-          vx: -1.5, alive: true, helmet: i === 0, bossSpawn: true,
-        });
-      }
-    }
-    if (now - tf.attackStart > 1500) {
-      tf.state = 'fight';
-      tf.attackCooldown = now + TWOFACE_ATTACK_COOLDOWN;
-      tf.thugsSpawned = false;
-    }
-  }
-
-  if (tf.state === 'fire_barrage') {
-    if (!tf.barrageSpawned) {
-      tf.barrageSpawned = true;
-      tf.barrage = [];
-      for (let i = 0; i < TWOFACE_COIN_BARRAGE_COUNT; i++) {
-        const angle = -Math.PI * 0.15 - (Math.PI * 0.7) * (i / (TWOFACE_COIN_BARRAGE_COUNT - 1));
-        tf.barrage.push({
-          x: tf.x + tf.w / 2, y: tf.y + 10,
-          vx: Math.cos(angle) * TWOFACE_COIN_SPEED,
-          vy: Math.sin(angle) * TWOFACE_COIN_SPEED,
-          alive: true, born: now,
-        });
-      }
-    }
-    if (now - tf.attackStart > 1200) {
-      tf.state = 'fight';
-      tf.attackCooldown = now + TWOFACE_ATTACK_COOLDOWN;
-      tf.barrageSpawned = false;
-    }
-  }
-
-  if (tf.state === 'fight') {
-    const speed = tf.hp <= 2 ? 2.0 : 1.2;
-    tf.x += tf.vx * speed * dt;
+  if (tf.state === 'patrol') {
+    tf.x += tf.vx * rageMul * dt;
     if (tf.x < tf.minX) { tf.x = tf.minX; tf.vx = Math.abs(tf.vx); }
     if (tf.x + tf.w > tf.maxX) { tf.x = tf.maxX - tf.w; tf.vx = -Math.abs(tf.vx); }
     tf.facing = tf.vx > 0 ? 1 : -1;
 
-    if (now > tf.attackCooldown) {
-      tf.state = 'coin_flip';
-      tf.coinFlipAt = now;
-      tf.coinAngle = 0;
-      tf.coinResult = null;
+    if (now >= tf.cutTimer) {
+      tf.state = 'advancing';
+      tf.facing = -1;
     }
   }
 
-  // stomp detection
-  if (tf.state !== 'idle' && tf.state !== 'coin_flip') {
-    const stomped = !player.swinging && player.vy > 1 &&
-      aabbOverlap(player, { x: tf.x, y: tf.y, w: tf.w, h: 14 }) &&
-      (player.y + player.h - tf.y) < STOMP_TOLERANCE;
-    if (stomped && now > tf.hitUntil) {
-      tf.hp--;
-      tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
-      player.vy = STOMP_BOUNCE;
-      score += 400;
+  if (tf.state === 'advancing') {
+    // walk toward the rope at increased speed
+    const targetX = tf.ropeCutX;
+    tf.vx = -Math.abs(TWOFACE_ADVANCE_SPEED);
+    tf.x += tf.vx * rageMul * dt;
+    tf.facing = -1;
+    if (tf.x <= targetX) {
+      tf.x = targetX;
+      tf.state = 'cutting';
+      tf.cutStart = now;
+    }
+  }
+
+  if (tf.state === 'cutting') {
+    // shake the cage while he hacks — visual telegraph + a beat of "hurry!"
+    cage.shakeUntil = now + 80;
+    if (now - tf.cutStart >= TWOFACE_CUT_ANIMATION_MS) {
+      // finished a cut: cage drops, back to patrol
+      cage.cutsCount++;
+      if (cage.cutsCount >= TWOFACE_CAGE_MAX_CUTS) {
+        cage.falling = true;
+        cage.fallStart = now;
+      } else {
+        cage.y = cage.initialY + cage.dropPerCut * cage.cutsCount;
+      }
+      // ripples in the tank as debris hits the water below the swing
+      water.ripples.push({ x: water.x + water.w * 0.5, r: 4, born: now });
+      tf.state = 'patrol';
+      tf.cutTimer = now + (enraged ? TWOFACE_ROPE_CUT_INTERVAL_RAGE : TWOFACE_ROPE_CUT_INTERVAL);
+      tf.vx = Math.abs(TWOFACE_PATROL_SPEED);
+    }
+  }
+
+  // === distraction thugs — spawn periodically once the fight is live
+  if (tf.state !== 'idle' && !cage.falling && now >= tf.nextThugAt) {
+    // spawn from the ladder side so they walk across Batman's path
+    const sx = tf.maxX - TILE;
+    level.thugs.push({
+      x: sx, y: tf.floorRow * TILE - 26, w: 24, h: 26,
+      minX: tf.minX, maxX: tf.maxX,
+      vx: -1.5, alive: true, helmet: false, bossSpawn: true,
+    });
+    tf.nextThugAt = now + (enraged ? TWOFACE_THUG_SPAWN_INTERVAL_RAGE : TWOFACE_THUG_SPAWN_INTERVAL);
+  }
+
+  // === Batman's hits on Two-Face
+  const takeHit = (source) => {
+    if (now < tf.hitUntil || tf.state === 'stunned') return;
+    tf.hp--;
+    tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
+    tf.stunUntil = now + TWOFACE_STUN_MS;
+    tf.state = 'stunned';
+    score += 400;
+    hud.score.textContent = score;
+    triggerScreenShake(now, 3, 180);
+    if (tf.hp <= 0) {
+      tf.alive = false;
+      tf.deadAt = now;
+      score += 5000;
       hud.score.textContent = score;
-      if (tf.hp <= 0) {
-        tf.alive = false;
-        tf.deadAt = now;
-        score += 5000;
-        hud.score.textContent = score;
-        return;
-      }
-      // coin flip after 3rd hit (hp goes from 5 to 2)
-      if (tf.hp === 2) {
-        tf.state = 'coin_flip';
-        tf.coinFlipAt = now;
-        tf.coinAngle = 0;
-        tf.coinResult = null;
-      }
     }
-    // body contact hurts
-    if (!player.swinging && now >= tf.hitUntil &&
-        Date.now() >= invulnUntil && aabbOverlap(player, tf)) {
-      hurtPlayer();
-    }
+    if (source === 'stomp') player.vy = STOMP_BOUNCE;
+  };
+
+  // stomp: allowed in every non-idle state so intercepting a cut is possible
+  const stomped = !player.swinging && player.vy > 1 &&
+    aabbOverlap(player, { x: tf.x, y: tf.y, w: tf.w, h: 14 }) &&
+    (player.y + player.h - tf.y) < STOMP_TOLERANCE;
+  if (stomped) takeHit('stomp');
+  // body contact hurts Batman only when Two-Face is upright and moving
+  if (!player.swinging && tf.state !== 'stunned' && tf.state !== 'cutting' &&
+      now >= tf.hitUntil && Date.now() >= invulnUntil &&
+      aabbOverlap(player, tf)) {
+    hurtPlayer();
   }
 
-  // batarang hits
+  // batarang hits (allowed against a cutting Two-Face — that's the whole point)
   for (const b of batarangs) {
-    if (b.phase !== 'out' || !tf.alive || now < tf.hitUntil) continue;
+    if (b.phase !== 'out' || !tf.alive) continue;
     if (b.x + 8 > tf.x && b.x - 8 < tf.x + tf.w && b.y + 8 > tf.y && b.y - 8 < tf.y + tf.h) {
-      tf.hp--;
-      tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
-      b.phase = 'back';
-      score += 400;
-      hud.score.textContent = score;
-      if (tf.hp <= 0) {
-        tf.alive = false;
-        tf.deadAt = now;
-        score += 5000;
-        hud.score.textContent = score;
-        return;
-      }
-      if (tf.hp === 2) {
-        tf.state = 'coin_flip';
-        tf.coinFlipAt = now;
-        tf.coinAngle = 0;
-        tf.coinResult = null;
+      if (now >= tf.hitUntil && tf.state !== 'stunned') {
+        takeHit('batarang');
+        b.phase = 'back';
       }
     }
   }
@@ -4696,58 +4719,130 @@ function drawBane(t) {
 
 // Robin, roped to a steel post beside the engine room's port boiler.
 // His hearts float overhead: they are the mission's real health bar.
-function drawRobin(rb, t) {
-  const px = rb.x - camera.x, py = rb.y - camera.y;
-  if (px < -60 || px > CANVAS_W + 60 || py > CANVAS_H + 60) return;
+// Water tank + splash ripples on the arena's left side
+function drawWaterTank(w, t) {
+  const x0 = w.x - camera.x, top = w.top - camera.y;
+  const floor = w.floorY - camera.y;
+  const wpx = w.w, hpx = floor - top;
 
-  // the post
-  ctx.fillStyle = '#39424f';
-  ctx.fillRect(px + rb.w / 2 - 3, py - 12, 6, rb.h + 12);
-  ctx.fillStyle = '#2a323d';
-  ctx.fillRect(px + rb.w / 2 - 5, py - 16, 10, 5);
-
-  const flash = performance.now() < rb.hitUntil && Math.floor(performance.now() / 90) % 2 === 0;
-  if (!flash) {
-    const wob = Math.sin(t / 340) * 1.5; // struggling against the ropes
-    // cape sliver (yellow) behind the body
-    ctx.fillStyle = '#e8c53a';
-    ctx.fillRect(px - 3 + wob, py + 8, 5, rb.h - 16);
-    // legs (green)
-    ctx.fillStyle = '#2e7d3a';
-    ctx.fillRect(px + 3, py + rb.h - 12, 7, 12);
-    ctx.fillRect(px + rb.w - 10, py + rb.h - 12, 7, 12);
-    // torso (red tunic)
-    ctx.fillStyle = '#c0392b';
-    ctx.fillRect(px + 2, py + 8, rb.w - 4, rb.h - 20);
-    ctx.fillStyle = '#e8c53a';
-    ctx.font = 'bold 8px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('R', px + 4, py + 17);
-    // head + black hair + domino mask with white eye slits
-    ctx.fillStyle = '#f0c8a0';
-    ctx.fillRect(px + 4, py - 2 + wob * 0.5, rb.w - 8, 11);
-    ctx.fillStyle = '#111';
-    ctx.fillRect(px + 3, py - 5 + wob * 0.5, rb.w - 6, 5);
-    ctx.fillRect(px + 5, py + 1 + wob * 0.5, rb.w - 10, 3);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(px + 6, py + 1 + wob * 0.5, 3, 2);
-    ctx.fillRect(px + rb.w - 9, py + 1 + wob * 0.5, 3, 2);
-    // ropes across the torso
-    ctx.strokeStyle = '#8a6a42';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) {
-      const ry = py + 11 + i * 7;
-      ctx.beginPath(); ctx.moveTo(px - 1, ry); ctx.lineTo(px + rb.w + 1, ry); ctx.stroke();
+  // steel tank body
+  ctx.fillStyle = '#2a3648';
+  ctx.fillRect(x0, top, wpx, hpx);
+  ctx.strokeStyle = '#0d1420';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x0, top, wpx, hpx);
+  // rivets
+  ctx.fillStyle = '#0d1420';
+  for (const rx of [x0 + 4, x0 + wpx - 4]) {
+    for (let y = top + 6; y < floor - 4; y += 12) {
+      ctx.beginPath(); ctx.arc(rx, y, 1.6, 0, Math.PI * 2); ctx.fill();
     }
   }
-
-  // hearts: hits Robin can still take
-  ctx.font = '12px monospace';
-  ctx.textAlign = 'center';
-  for (let i = 0; i < rb.maxHp; i++) {
-    ctx.fillStyle = i < rb.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
-    ctx.fillText('♥', px + rb.w / 2 - (rb.maxHp - 1) * 7 + i * 14, py - 22);
+  // water surface with animated waves
+  const waveOff = Math.sin(t / 320) * 2;
+  ctx.fillStyle = '#1a4c78';
+  ctx.fillRect(x0 + 3, top + 2, wpx - 6, hpx - 4);
+  ctx.fillStyle = 'rgba(120,180,220,0.35)';
+  ctx.beginPath();
+  ctx.moveTo(x0 + 3, top + 5 + waveOff);
+  for (let i = 0; i <= wpx; i += 6) {
+    ctx.lineTo(x0 + 3 + i, top + 5 + Math.sin(t / 260 + i * 0.3) * 2);
   }
+  ctx.lineTo(x0 + wpx - 3, top + 12);
+  ctx.lineTo(x0 + 3, top + 12);
+  ctx.closePath();
+  ctx.fill();
+  // ripple rings
+  for (const r of w.ripples) {
+    const age = r.r / 60;
+    ctx.strokeStyle = `rgba(200,230,255,${0.5 * (1 - age)})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(r.x - camera.x, top + 6, r.r, r.r * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // "H2O" label / danger stripe
+  ctx.fillStyle = '#c0392b';
+  ctx.fillRect(x0 + 6, floor - 12, wpx - 12, 6);
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('¡PELIGRO!', x0 + wpx / 2, floor - 4);
+  ctx.textAlign = 'left';
+}
+
+// The rope, the cage, and Robin sprite inside it. Rope segments show
+// which cuts are already through.
+function drawRobinCage(tf, t) {
+  const cage = tf.cage;
+  const rb = tf.robin;
+  const anchorX = tf.ropeAnchorX - camera.x;
+  const anchorY = tf.ropeAnchorY - camera.y;
+  const cageX = cage.x - camera.x;
+  const cageY = cage.y - camera.y;
+  const cw = cage.w, ch = cage.h;
+  const shakeX = performance.now() < cage.shakeUntil ? Math.sin(performance.now() / 30) * 2 : 0;
+
+  // ceiling mounting bracket
+  ctx.fillStyle = '#2a323d';
+  ctx.fillRect(anchorX - 12, anchorY, 24, 6);
+  ctx.fillStyle = '#3a4451';
+  ctx.fillRect(anchorX - 3, anchorY + 4, 6, 4);
+
+  // the rope: three visible segments. Cut segments are drawn frayed.
+  const cageTopY = cageY + shakeX * 0;
+  const segCount = 3;
+  const segH = (cageTopY - (anchorY + 8)) / segCount;
+  for (let i = 0; i < segCount; i++) {
+    const y0 = anchorY + 8 + i * segH;
+    const y1 = y0 + segH;
+    const cut = i < cage.cutsCount;
+    ctx.strokeStyle = cut ? '#7a5030' : '#b98a55';
+    ctx.lineWidth = cut ? 1 : 3;
+    ctx.beginPath(); ctx.moveTo(anchorX, y0); ctx.lineTo(anchorX + shakeX * (i / 3), y1); ctx.stroke();
+    if (cut) {
+      // fray marks near the top of the cut segment
+      ctx.strokeStyle = '#5a3a20';
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 4; k++) {
+        ctx.beginPath();
+        ctx.moveTo(anchorX - 3, y0 + 1 + k * 2);
+        ctx.lineTo(anchorX + 3, y0 + 2 + k * 2);
+        ctx.stroke();
+      }
+    }
+  }
+  // hook connecting rope to cage
+  ctx.fillStyle = '#6a5238';
+  ctx.beginPath();
+  ctx.arc(cageX + cw / 2 + shakeX, cageTopY - 2, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the cage: iron frame + vertical bars
+  const gx = cageX + shakeX;
+  ctx.strokeStyle = '#2a2f38';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(gx, cageY, cw, ch);
+  ctx.fillStyle = '#1a1e26';
+  ctx.fillRect(gx, cageY, cw, 4);        // top bar
+  ctx.fillRect(gx, cageY + ch - 4, cw, 4); // bottom bar
+  ctx.strokeStyle = '#3a4250';
+  ctx.lineWidth = 1.5;
+  for (let bx = 6; bx < cw - 2; bx += 6) {
+    ctx.beginPath(); ctx.moveTo(gx + bx, cageY + 4); ctx.lineTo(gx + bx, cageY + ch - 4); ctx.stroke();
+  }
+
+  // Robin sprite from the intro cutscene, scaled to fit the cage
+  if (!rb.drowned) {
+    const scale = ch / 60;
+    drawRobinSprite(gx + (cw - 24 * scale) / 2, cageY + 4, scale, true, Math.sin(t / 260) * 0.06);
+  }
+
+  // hearts + cut counter above the cage
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillText(`SOGA ${3 - cage.cutsCount}/3`, gx + cw / 2, cageY - 6);
   ctx.textAlign = 'left';
 }
 
@@ -4755,13 +4850,17 @@ function drawTwoFace(t) {
   const tf = level.twoface;
   if (!tf) return;
 
-  if (tf.robin) drawRobin(tf.robin, t);
+  // Scene decorations — water first, then rope + cage. Two-Face body
+  // last so he passes in front of everything as he patrols by.
+  drawWaterTank(tf.water, t);
+  drawRobinCage(tf, t);
 
   const px = tf.x - camera.x;
   const py = tf.y - camera.y;
   const bw = tf.w, bh = tf.h;
 
   if (!tf.alive) {
+    // KO puddle
     ctx.fillStyle = '#555';
     ctx.fillRect(px + 2, py + bh - 12, bw - 4, 12);
     ctx.fillStyle = '#eee';
@@ -4772,101 +4871,50 @@ function drawTwoFace(t) {
   }
 
   const flashing = performance.now() < tf.hitUntil && Math.floor(performance.now() / 90) % 2 === 0;
-  if (flashing) return;
+  if (!flashing) {
+    // Use the intro sprite so his look stays consistent with the cutscene.
+    // drawTwoFaceSprite is drawn at ~30×78 relative to the top-left, so
+    // shift down by (h - 78) to sit his feet on tf.y + tf.h.
+    const bob = tf.state === 'cutting' ? Math.abs(Math.sin(performance.now() / 90)) * 4
+             : (tf.state === 'advancing' ? Math.abs(Math.sin(performance.now() / 140)) * 2
+             : 0);
+    drawTwoFaceSprite(px, py + bh - 78, 1.0, -bob);
 
-  ctx.save();
-  const cx = px + bw / 2;
+    // stunned: dizzy stars
+    if (tf.state === 'stunned') {
+      ctx.fillStyle = '#f6d743';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 3; i++) {
+        const ang = performance.now() / 260 + i * (Math.PI * 2 / 3);
+        ctx.fillText('★', px + bw / 2 + Math.cos(ang) * 14, py - 4 + Math.sin(ang) * 6);
+      }
+      ctx.textAlign = 'left';
+    }
 
-  // legs
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(px + 4, py + bh * 0.6, bw * 0.35, bh * 0.4);
-  ctx.fillRect(px + bw * 0.55, py + bh * 0.6, bw * 0.35, bh * 0.4);
-  // shoes
-  ctx.fillStyle = '#111';
-  ctx.fillRect(px + 2, py + bh - 6, bw * 0.4, 6);
-  ctx.fillRect(px + bw * 0.55, py + bh - 6, bw * 0.4, 6);
+    // cutting: knife swipes
+    if (tf.state === 'cutting') {
+      ctx.strokeStyle = '#e8e8ee';
+      ctx.lineWidth = 2;
+      const swipe = (performance.now() % 260) / 260;
+      const bladeX = px - 12 + swipe * 20;
+      ctx.beginPath();
+      ctx.moveTo(bladeX, py + 6);
+      ctx.lineTo(bladeX - 10, py + 22);
+      ctx.stroke();
+    }
+  }
 
-  // torso: split suit — left side dark, right side white
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(px, py + bh * 0.15, bw / 2, bh * 0.5);
-  ctx.fillStyle = '#e8e0d0';
-  ctx.fillRect(px + bw / 2, py + bh * 0.15, bw / 2, bh * 0.5);
-  // tie
-  ctx.fillStyle = '#222';
-  ctx.fillRect(cx - 2, py + bh * 0.18, 4, bh * 0.35);
-
-  // head: two-toned — left normal, right scarred
-  const headR = bw * 0.45;
-  ctx.fillStyle = '#f0d6b0';
-  ctx.beginPath();
-  ctx.arc(cx, py + bh * 0.08, headR, Math.PI * 0.5, Math.PI * 1.5);
-  ctx.fill();
-  ctx.fillStyle = '#6a3a6a';
-  ctx.beginPath();
-  ctx.arc(cx, py + bh * 0.08, headR, -Math.PI * 0.5, Math.PI * 0.5);
-  ctx.fill();
-
-  // eyes
-  ctx.fillStyle = '#111';
-  ctx.fillRect(cx - headR * 0.5, py + bh * 0.04, 3, 3);
-  ctx.fillStyle = '#d22';
-  ctx.fillRect(cx + headR * 0.2, py + bh * 0.04, 3, 3);
-
-  // mouth
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cx - 5, py + bh * 0.14);
-  ctx.lineTo(cx + 5, py + bh * 0.14);
-  ctx.stroke();
-
-  // HP pips
-  if (tf.state !== 'idle') {
+  // HP pips above his head (only once the fight is live)
+  if (tf.state !== 'idle' && tf.alive) {
+    const cx = px + bw / 2;
     for (let i = 0; i < tf.maxHp; i++) {
       ctx.fillStyle = i < tf.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
       ctx.beginPath();
-      ctx.arc(cx - (tf.maxHp - 1) * 6 + i * 12, py - headR - 18, 4.5, 0, Math.PI * 2);
+      ctx.arc(cx - (tf.maxHp - 1) * 6 + i * 12, py - 14, 4.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-
-  // coin flip animation
-  if (tf.state === 'coin_flip') {
-    const coinY = py - 30 - Math.abs(Math.sin(tf.coinAngle)) * 30;
-    const scaleX = Math.cos(tf.coinAngle * 3);
-    ctx.save();
-    ctx.translate(cx, coinY);
-    ctx.scale(scaleX, 1);
-    ctx.fillStyle = '#ffd700';
-    ctx.beginPath();
-    ctx.arc(0, 0, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#b8860b';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    if (Math.abs(scaleX) > 0.3) {
-      ctx.fillStyle = '#b8860b';
-      ctx.font = 'bold 8px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('$', 0, 3);
-    }
-    ctx.restore();
-  }
-
-  // barrage coins
-  for (const c of tf.barrage) {
-    if (!c.alive) continue;
-    const bx = c.x - camera.x, by = c.y - camera.y;
-    ctx.fillStyle = '#ffd700';
-    ctx.beginPath();
-    ctx.arc(bx, by, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#b8860b';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  ctx.restore();
 }
 
 function drawShockwaves() {
