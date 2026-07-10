@@ -372,12 +372,14 @@ const LEVEL_SPECS = [
       { x: 8,  y: 9,  range: [7, 12], helmet: true },
       { x: 11, y: 9,  range: [7, 12], helmet: true },
     ],
-    // birds sweep the ladder shaft in the CLEAR gaps between catwalks
-    // (rows 10, 19, 28 — where no cargo containers are stacked, so they
-    // don't clip inside freight while patrolling)
+    // birds sweep the ladder shaft in the CLEAR gaps between decks.
+    // Rows 11 / 20 / 29 are the middle rows of each gap — the birds'
+    // vertical bob (~10 px) still clears the catwalks above and below,
+    // so they patrol the full width and actually cross the ladder.
     birds: [
-      { x: 9, y: 10, range: [3, 16] },
-      { x: 9, y: 19, range: [3, 16] },
+      { x: 9, y: 11, range: [3, 16] },
+      { x: 9, y: 20, range: [3, 16] },
+      { x: 9, y: 29, range: [3, 16] },
     ],
     bats: [[14, 12]],   // checkpoint on rest zone 2
     twoface: {

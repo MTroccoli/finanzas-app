@@ -1047,6 +1047,43 @@ function hurtPlayer() {
     invulnUntil = Date.now() + INVULN_TIME;
     return;
   }
+  // Boss fights (Two-Face / Bane): the fight is a self-contained
+  // encounter, so a hit only drains a life — Batman stays right where
+  // he is with a brief knockback + invuln. If lives hit 0, it's a real
+  // game over. Falls and timeouts still call killPlayer() directly and
+  // bypass this branch.
+  const tfEngaged = level.twoface && level.twoface.alive && level.twoface.state !== 'idle';
+  const baneEngaged = level.bane && level.bane.alive && level.bane.state !== 'idle';
+  if (tfEngaged || baneEngaged) {
+    lives--;
+    hud.lives.textContent = Math.max(lives, 0);
+    if (lives <= 0) {
+      state = 'gameover';
+      gameOverCount++;
+      if (playerName) saveGameOvers(playerName, gameOverCount);
+      if (levelIndex === BOSS_LEVEL_INDEX && coinsCollected >= CONTINUE_COST) {
+        continueOffer = true;
+        showOverlay('CAÍSTE EN EL GALPÓN',
+          `Bane sigue ahí. Usá ${CONTINUE_COST} de tus ${coinsCollected} monedas para volver a enfrentarlo sin perder tu progreso (o presioná R para reiniciar desde cero).`,
+          `USAR ${CONTINUE_COST} MONEDAS`);
+        return;
+      }
+      showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
+      return;
+    }
+    invulnUntil = Date.now() + INVULN_TIME;
+    // small knockback away from the boss so Batman doesn't immediately
+    // eat a second hit standing inside the enemy
+    const boss = level.twoface?.alive ? level.twoface : level.bane;
+    if (boss) {
+      const bossCx = boss.x + boss.w / 2;
+      const dir = (player.x + player.w / 2) < bossCx ? -1 : 1;
+      player.vx = dir * 3;
+      player.vy = -4;
+      player.onGround = false;
+    }
+    return;
+  }
   killPlayer();
 }
 
@@ -1418,11 +1455,11 @@ function updateTwoFace(dt, now) {
       if (source === 'stomp') player.vy = STOMP_BOUNCE;
       return;
     }
-    // hit counter: hp goes 5→4→3→2→1. 2nd hit → hp=3, 4th hit → hp=1.
-    // On those hits, Two-Face pulls out his coin and either fires 3
+    // hit counter: hp goes 5→4→3→2→1. Coin flip on hits 1, 3, 4 (only
+    // the 2nd hit just stuns him). On coin hits Two-Face either fires 3
     // bullets or drops a thug + a bird pair.
     const hitsSoFar = tf.maxHp - tf.hp;
-    if (hitsSoFar === 2 || hitsSoFar === 4) {
+    if (hitsSoFar === 1 || hitsSoFar === 3 || hitsSoFar === 4) {
       tf.state = 'coin_flip';
       tf.coinFlipAt = now;
       tf.coinAngle = 0;
@@ -5239,13 +5276,15 @@ function drawTwoFace(t) {
     ctx.stroke();
   }
 
-  // HP pips above his head (only once the fight is live)
+  // HP pips above his head. drawTwoFaceSprite draws the sprite from
+  // (px, py + bh - 78) so the top of his head sits at py - 34; place
+  // the pips a bit higher than that so they read as a hover marker.
   if (tf.state !== 'idle' && tf.alive) {
     const cx = px + bw / 2;
     for (let i = 0; i < tf.maxHp; i++) {
       ctx.fillStyle = i < tf.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
       ctx.beginPath();
-      ctx.arc(cx - (tf.maxHp - 1) * 6 + i * 12, py - 14, 4.5, 0, Math.PI * 2);
+      ctx.arc(cx - (tf.maxHp - 1) * 6 + i * 12, py - 48, 4.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
