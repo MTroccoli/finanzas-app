@@ -50,7 +50,10 @@ function switchCharacter() {
     jumpsUsed: 0,
   };
   activeChar = activeChar === 'batman' ? 'robin' : 'batman';
-  // Robin flies with the batarang only; Batman keeps his last chosen tool
+  // Robin's only tool is the batarang — regardless of what Batman was
+  // holding, force it on when Robin takes over. Batman keeps whatever
+  // he last chose (batarang / batigarra / armor).
+  if (activeChar === 'robin') player.gadget = 'batarang';
   currentGadget = player.gadget;
   currentPowerState = player.powerState;
   updateWeaponButton();
@@ -67,8 +70,8 @@ window.addEventListener('keydown', e => {
   const confirmCode = ['ArrowUp', 'KeyW', 'Space', 'KeyX', 'Enter'].includes(e.code);
   if (state === 'computer') {
     if (confirmCode) {
-      // Act 2 return: the first screen is the news; a second tap opens
-      // the Mr. Freeze expediente; a third goes to the choice screen.
+      // Post-2-4 fresh visit: news first, then expediente, then choice.
+      // Hub visits from Act 3+ skip straight to the expediente.
       state = postTwoFaceReturn ? 'freezeExpediente' : 'choice';
       e.preventDefault();
     }
@@ -145,6 +148,13 @@ if (caveBtnEl) {
     if (state !== 'playing') return;
     const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
     if (caveIdx >= 0) {
+      // Returning to the Batcave from Act 3+ is a HUB visit, not a
+      // fresh Act-2 rescue: the player is always Batman, Robin walks
+      // in beside him, Alfred stays silent, and the Batcomputer opens
+      // straight into the highest-act expediente (skip the news).
+      caveHubReturn = true;
+      // force Batman back into the driver's seat
+      if (activeChar === 'robin' && companion) switchCharacter();
       loadLevel(caveIdx);
       state = 'playing';
     }
@@ -267,6 +277,7 @@ let currentPowerState = 'small'; // HEALTH only: small | big — carries over be
 let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
 let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
+let caveHubReturn = false;       // player warped to the Batcave via the ⌂ button from Act 3+ (silent Alfred, skip news)
 // Persist "beat Two-Face" so Continue from a fresh page reload also
 // lands the news feed instead of the Two-Face expediente.
 function saveAct2Beaten() {
@@ -642,16 +653,23 @@ function loadLevel(idx) {
   // Armor upgrade: force every fresh level spawn back up to big
   if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
-  // Act 3 (frozen Gotham) always spawns Batman with 5 lives, and drops
-  // 3 more the first time an Act 3 level is entered.
-  if (level.name && level.name.startsWith('3-') && lives < 5) {
-    lives = 5;
-    hud.lives.textContent = 5;
+  // Per-act starting lives. Only bumps on the FIRST level of each act
+  // (1-1, 2-1, 3-1) so the tally is a floor at act boundaries, not a
+  // reset that erases earlier progress inside the act.
+  const actStart = { '1-1': 3, '2-1': 4, '3-1': 5 };
+  const bump = actStart[level.name];
+  if (bump && lives < bump) {
+    lives = bump;
+    hud.lives.textContent = bump;
   }
   // Act 3 also introduces the co-op mechanic: Robin walks in beside
   // Batman, and either can be swapped in as the controlled character.
-  if (level.name && level.name.startsWith('3-')) {
-    if (!companion || (activeChar === 'batman' && companion.gadget !== 'batarang')) {
+  // The companion persists across Batcave HUB visits so switching Batman
+  // <-> Robin never "loses" the other one.
+  const isAct3 = level.name && level.name.startsWith('3-');
+  const isCaveHub = level.cave && postTwoFaceReturn;
+  if (isAct3 || isCaveHub) {
+    if (!companion) {
       companion = {
         x: player.x - 34, y: player.y,
         w: 22, h: 30,
@@ -665,23 +683,29 @@ function loadLevel(idx) {
         walkPhase: 0,
       };
     } else {
-      // keep the companion but re-align them next to Batman on level load
       companion.x = player.x - 34;
       companion.y = player.y;
       companion.onGround = true;
+      // Robin (as companion) always carries the batarang, never
+      // batigarra — enforced on every level load in case the swap
+      // history left it stale.
+      if (companion.isRobin) companion.gadget = 'batarang';
     }
   } else {
     companion = null;
   }
   // Act 2 Batcave return: Batman walks in with Robin at his side, and
   // Alfred is waiting halfway to the batcomputer with the news.
+  // On a Batcave HUB visit (Act 3+ ⌂ button), Alfred is silent and the
+  // Batcomputer skips the news, going straight to the current-act
+  // expediente.
   if (level.cave && postTwoFaceReturn) {
     const cv = level.cave;
     cv.act2Return = true;
     cv.alfred = {
       x: cv.computerX - 220,
       y: cv.plateauY - 66, // shoes rest exactly on the plateau top
-      triggered: false,
+      triggered: caveHubReturn, // already talked to on later visits
       dialogPage: 0,
     };
     cv.companion = {
@@ -690,9 +714,14 @@ function loadLevel(idx) {
       facing: 1,
       walkPhase: 0,
     };
-    // no wall TV — Freeze's news feed shows up on the batcomputer
-    // itself when Batman opens the expediente
     cv.tvOn = false;
+    // widen the level-select carousel so Batman can replay Act 2 levels
+    // from the entrance door — not just Act 1
+    cv.replayOptions = [
+      ...LEVEL_SPECS.map((s, i) => ({ i, name: s.name }))
+        .filter(o => /^1-/.test(o.name) || /^2-/.test(o.name)),
+      { i: -1, name: 'SEGUIR' },
+    ];
   }
   updateWeaponButton(); // keep the gadget's controls visible across levels
   snapCameraToPlayer();
@@ -723,6 +752,7 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   armored = false;
+  caveHubReturn = false;
   // Auto-detect: if Continue drops the player back in the CUEVA (or
   // past it) after they already beat Two-Face on a previous run, keep
   // showing the frozen-Gotham news instead of the Two-Face expediente.
@@ -1817,10 +1847,11 @@ function updatePlaying(dt) {
       player.vx = 0;
       cv.openedAt = now;
       cv.computerDone = true;
-      // always show the expediente first (it carries the player's game-over
-      // record); pressing jump there moves on to the weapon choice
       cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0;
-      state = 'computer';
+      // Hub visits from Act 3+ open straight into the current-act
+      // expediente (Mr. Freeze). Fresh post-2-4 visits still start with
+      // the news feed. Act 1 always shows the Two-Face expediente.
+      state = caveHubReturn ? 'freezeExpediente' : 'computer';
       return;
     }
     // returning to the entrance door opens a "replay an Act 1 level" menu.
@@ -6932,6 +6963,8 @@ function loop(now) {
       jumpBufferUntil = 0; shootBufferUntil = 0;
       postTwoFaceReturn = true;
       saveAct2Beaten();
+      // fresh post-2-4 arrival: news first, then expediente
+      caveHubReturn = false;
       const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
       loadLevel(caveIdx);
       // Batman + Robin walk into the cave normally — Alfred is waiting

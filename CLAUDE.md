@@ -29,6 +29,126 @@ This workflow keeps the game in a constantly deployable state and maintains a cl
 
 ---
 
+## Game Rules & Story Progression (SOURCE OF TRUTH)
+
+**Every change to the game should respect this section. If a rule
+here doesn't match the code, the code is wrong — fix the code, not the
+doc.**
+
+### Acts and lives
+- **Act 1** (levels `1-*`) — 3 starting lives. Set when loading `1-1`.
+- **Act 2** (levels `2-*`) — 4 starting lives. Set when loading `2-1`.
+- **Act 3** (levels `3-*`) — 5 starting lives. Set when loading `3-1`.
+- Lives never go DOWN at an act boundary — the bump is a floor
+  (`if (lives < target) lives = target`), so a player who hoarded
+  lives keeps them. Implemented in `loadLevel` via `actStart` map.
+
+### Story arcs, bosses and interstitials
+- Act 1 boss: **Bane** in a warehouse (level `1-4`, indoor).
+- Between Act 1 and Act 2: **Baticueva** (level `CUEVA`). Player picks
+  batarang OR batigarra at the Batcomputer.
+- Act 2 boss: **Two-Face** on a cargo ship (level `2-4`, indoor).
+  Robin is caged over a water tank; boss cuts the rope. Batman must
+  intercept 3 cuts and land 5 stomps/batarangs to win.
+- After Two-Face: **rescue cutscene** (state `rescue`, ~9 s) →
+  auto-loads CUEVA with `postTwoFaceReturn = true` (persisted via
+  `saveAct2Beaten` → localStorage `bitbros:act2beaten`).
+- Post-2-4 Batcave: Alfred is placed on the plateau, `!` above his
+  head. On approach → `alfredDialog` state (4 pages). After dialog,
+  the Batcomputer opens.
+- Post-2-4 choice: pick the WEAPON Batman didn't take in Act 1, OR
+  an ARMOR upgrade (`armored = true`, spawn always big).
+- Act 3 exit from CUEVA jumps to `3-1` (NOT the next LEVEL_SPECS index,
+  because CUEVA is stored between Acts 1 and 2 in the array).
+- Act 3 boss: **Mr. Freeze** (not implemented yet; frozen levels
+  and TV/expediente/portrait are hooked to him).
+
+### Co-op (Act 3)
+- Batman + Robin co-exist. Only ONE is on screen at a time
+  (`drawCompanion` is NOT called during Act 3 gameplay — only the
+  active `player` renders).
+- Q / T on keyboard OR the `⇄ ROBIN / ⇄ BATMAN` button (top-left of
+  canvas, `#btn-swap`) hot-swap between them.
+- The one you swap OUT becomes `companion`; the one you swap IN
+  becomes `player`. Companion is invisible; state is preserved.
+
+### Robin's kit
+- **ALWAYS carries the batarang.** Never batigarra. `switchCharacter`
+  enforces this with `if (activeChar === 'robin') player.gadget = 'batarang';`
+- **Aerial double jump** with a somersault animation. First jump uses
+  `JUMP_VELOCITY`, second (mid-air) uses `JUMP_VELOCITY * 0.92`. Both
+  reset when he touches the ground. Batman does NOT have double jump.
+
+### Batman's kit
+- Whatever he picked in Act 1 (batarang OR batigarra) — kept forever.
+- If armored (Act 2 choice), spawns big every level, boss respawn,
+  and post-hit re-suit. `armored = true` flag.
+- Batigarra: grapple + rope reel with ⬆⬇. Batarang: single throw.
+
+### Weapon-specific controls (`updateWeaponButton`)
+- **Batarang** equipped: fire button shows 🪃, ⬆⬇ HIDDEN.
+- **Batigarra** equipped: fire button shows 🪝, ⬆⬇ SHOWN (rope reel).
+- Called on every `setGadget` and `switchCharacter`.
+
+### Batcave (`CUEVA` level) — the hub
+- The Batcave is a HUB that Batman returns to between acts and freely
+  during Act 3+.
+- Two entry modes:
+  1. **Fresh post-2-4 arrival** (via rescue cutscene) —
+     `caveHubReturn = false`. Alfred talks (news), Batcomputer opens
+     with the news feed first, THEN the Mr. Freeze expediente, THEN
+     the choice screen.
+  2. **Hub visit** (via the `⌂ BATICUEVA` button in Act 3+) —
+     `caveHubReturn = true`. Batman is forced back into control (Robin
+     becomes companion). Alfred stays silent (`triggered = true` from
+     the start). Batcomputer opens straight into the current-act
+     expediente (Mr. Freeze), NO news feed re-play.
+- `postTwoFaceReturn` is set by the rescue cutscene AND is auto-
+  restored on Continue from `bitbros:act2beaten` in localStorage.
+- Batcave level-select carousel (accessed via the entrance door):
+  - Pre-Act 2 (`postTwoFaceReturn = false`): Act 1 levels only.
+  - Post-Act 2: Act 1 AND Act 2 levels.
+  - "SEGUIR" option always closes the menu and resumes the Batcave.
+- The Batcomputer expediente content is the LORE of the max act
+  reached:
+  - Highest act reached is 1: **Two-Face** expediente (preview of
+    the next boss).
+  - Highest act reached is 2 or 3: **Mr. Freeze** expediente.
+
+### Boss-fight rules (Bane & Two-Face)
+- Batman losing a life during an ACTIVE boss fight does NOT respawn
+  him. `hurtPlayer` decrements lives, gives invuln + a small
+  knockback, and if armored, re-suits him. Boss keeps its HP,
+  cage-cut count, etc. Only if lives hit 0 is it a real Game Over.
+- Falls / timeouts still call `killPlayer` directly and bypass this
+  branch.
+
+### Frozen enemies (Act 3)
+- Any level with `frozen: true` in its spec (and any thug/bird with
+  `frozen: true`) uses these rules:
+  - Frozen enemies move at ~30 % of normal speed (`vx: 0.35` for
+    thugs, `0.5` for birds vs normal `1.2 / 1.7`).
+  - First stomp / batarang hit **thaws** the enemy (`frozen = false`,
+    speed restored to normal, +50 score, +5 coins etc.).
+  - Second hit KILLS as usual.
+  - Visual: cool blue tint (`rgba(120,180,220,0.4)`) over the sprite
+    + snow cap on head/back. NO ice-cube encasement.
+- Slippery physics: friction on a `frozen` level is `0.93` (vs
+  normal `0.78 = FRICTION`). Batman keeps sliding but stays in
+  control.
+
+### Character sprite alignment
+- Robin (companion or active) is scaled by `player.h / 55` so his
+  feet line up with Batman's exactly. NEVER draw him with a fixed
+  scale.
+- In cave, Robin runs his OWN tiny physics loop (gravity + step-up
+  jump `vy = -6.5` when the tile ahead is higher). He does NOT
+  mirror `player.y`.
+- Alfred stands with feet ON the plateau (`y = plateauY - 66` for
+  the 66 px-tall sprite). Never above or below.
+
+---
+
 ## File Structure
 
 ### Core Game Files
