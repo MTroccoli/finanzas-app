@@ -175,6 +175,10 @@ let allCoinsBonus = false;
 let frameTime = 0;
 let currentPowerState = 'small'; // HEALTH only: small | big — carries over between levels, resets on death
 let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
+let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
+let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
+let rescueStart = 0;             // performance.now() when the 2-4 rescue cutscene began
+let alfredStart = 0;             // performance.now() when Alfred's news cutscene began
 let batarangAmmo = BATARANG_MAX_AMMO;
 let batarangs = [];
 let grappleCooldownUntil = 0;
@@ -519,6 +523,8 @@ function loadLevel(idx) {
   if (level && level.chase) exitChaseMode();
   levelIndex = idx;
   level = buildLevel(LEVEL_SPECS[idx]);
+  // Armor upgrade: force every fresh level spawn back up to big
+  if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
   updateWeaponButton(); // keep the gadget's controls visible across levels
   snapCameraToPlayer();
@@ -547,6 +553,8 @@ function loadLevel(idx) {
 
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
+  armored = false;
+  postTwoFaceReturn = false;
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
   // If continuing past the Batcave without a weapon, send back to pick one
@@ -951,7 +959,9 @@ function killPlayer() {
     showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
     return;
   }
-  currentPowerState = 'small';
+  // Armor upgrade (unlocked in the Act 2 Batcave) makes every respawn
+  // start big, so Batman always has one extra hit before he can die.
+  currentPowerState = armored ? 'big' : 'small';
   // Boss fights already in progress: keep Batman in the arena so the
   // fight stays fluid — no punishing trek back to the level start. For
   // Two-Face we drop him at the ladder top on the arena floor; for
@@ -1072,6 +1082,8 @@ function hurtPlayer() {
       return;
     }
     invulnUntil = Date.now() + INVULN_TIME;
+    // Armor upgrade: the very next hit puts the suit right back on
+    if (armored && player.powerState === 'small') setPowerState('big');
     // small knockback away from the boss so Batman doesn't immediately
     // eat a second hit standing inside the enemy
     const boss = level.twoface?.alive ? level.twoface : level.bane;
@@ -1096,6 +1108,14 @@ function levelEnemyTotals() {
 }
 
 function completeLevel() {
+  // 2-4: the Two-Face fight ends with a hand-crafted rescue cutscene
+  // that hands off to the Batcave for the Act 2 choice screen.
+  if (level.twoface) {
+    state = 'rescue';
+    rescueStart = performance.now();
+    score += Math.floor(timeLeft) * 5;
+    return;
+  }
   state = 'levelcomplete';
   stateTimer = 1400;
   score += Math.floor(timeLeft) * 5;
@@ -3323,10 +3343,20 @@ function drawChoiceScreen(now) {
   ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
   ctx.fillText('La Batcomputadora fabricó dos herramientas — elegí', CANVAS_W / 2, 84);
 
-  const cards = [
-    { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
-    { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] },
-  ];
+  // Act 2 Batcave: after the Two-Face rescue Batman can either get the
+  // gadget he didn't pick in Act 1, or lock in an armor upgrade that
+  // makes every spawn start as big Batman (soaks one extra hit).
+  const cards = postTwoFaceReturn
+    ? [
+        currentGadget === 'batarang'
+          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['El arma no elegida', 'Herramienta de movilidad', 'Control total del balanceo'] }
+          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['El arma no elegida', 'Arma arrojadiza', 'Derriba enemigos a distancia'] },
+        { x: 424, title: '2. ARMADURA', c: '#c95a3a', lines: ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'] },
+      ]
+    : [
+        { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
+        { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] },
+      ];
   cards.forEach((card, i) => {
     const sel = cv.choiceSel === i;
     ctx.save();
@@ -3335,10 +3365,15 @@ function drawChoiceScreen(now) {
     ctx.restore();
     ctx.strokeStyle = sel ? '#ffd166' : '#3a4664'; ctx.lineWidth = sel ? 3 : 2;
     ctx.strokeRect(card.x, 108, 280, 250);
-    // icon
+    // icon — picked by title so the Act 2 rearrangement (weapon left,
+    // armor right, or the weapon that wasn't chosen in Act 1) draws the
+    // right glyph on the right card
     ctx.save();
     ctx.translate(card.x + 140, 180);
-    if (i === 0) {
+    const iconKind = card.title.includes('BATARANG') ? 'batarang'
+                   : card.title.includes('BATIGARRA') ? 'grapple'
+                   : 'armor';
+    if (iconKind === 'batarang') {
       ctx.fillStyle = card.c;
       ctx.rotate(-0.3);
       ctx.beginPath();
@@ -3347,6 +3382,24 @@ function drawChoiceScreen(now) {
       ctx.quadraticCurveTo(18, -17, 40, 0); ctx.quadraticCurveTo(22, -1, 14, 7);
       ctx.quadraticCurveTo(6, 1, 0, 9); ctx.quadraticCurveTo(-6, 1, -14, 7);
       ctx.quadraticCurveTo(-22, -1, -40, 0); ctx.closePath(); ctx.fill();
+    } else if (iconKind === 'armor') {
+      // chest plate with a bat emblem
+      ctx.fillStyle = card.c;
+      ctx.beginPath();
+      ctx.moveTo(-38, -30); ctx.lineTo(38, -30); ctx.lineTo(34, 26);
+      ctx.lineTo(0, 40); ctx.lineTo(-34, 26); ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#7a2f22';
+      ctx.fillRect(-30, -12, 60, 4);
+      ctx.fillRect(-30, -2, 60, 4);
+      ctx.fillRect(-30, 8, 60, 4);
+      // bat emblem
+      ctx.fillStyle = '#131722';
+      ctx.beginPath();
+      ctx.moveTo(-20, -20); ctx.lineTo(-6, -8); ctx.lineTo(-2, -14); ctx.lineTo(0, -8);
+      ctx.lineTo(2, -14); ctx.lineTo(6, -8); ctx.lineTo(20, -20);
+      ctx.lineTo(10, -4); ctx.lineTo(0, -2); ctx.lineTo(-10, -4);
+      ctx.closePath(); ctx.fill();
     } else {
       // grapple gun + hook + rope
       ctx.fillStyle = '#6b7280'; ctx.fillRect(-30, -8, 40, 16);
@@ -3372,9 +3425,22 @@ function drawChoiceScreen(now) {
 
 function chooseCaveWeapon() {
   const cv = level.cave;
-  cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
-  setGadget(cv.weaponChosen);       // permanent tool, independent of health
-  if (player.powerState === 'small') setPowerState('big'); // suit up
+  if (postTwoFaceReturn) {
+    // Act 2: option 1 is the weapon Batman DIDN'T pick in Act 1, option
+    // 2 is the armor upgrade (permanent — every spawn starts big).
+    if (cv.choiceSel === 0) {
+      const otherWeapon = currentGadget === 'batarang' ? 'batigarra' : 'batarang';
+      cv.weaponChosen = otherWeapon;
+      setGadget(otherWeapon);
+    } else {
+      armored = true;
+    }
+  } else {
+    cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
+    setGadget(cv.weaponChosen);   // permanent tool, independent of health
+  }
+  // suit Batman up so he can eat one hit before dropping down
+  if (player.powerState === 'small') setPowerState('big');
   lives++;
   hud.lives.textContent = lives;
   state = 'playing';
@@ -5554,6 +5620,242 @@ const CUT_DOOR_END = 5200;   // Robin thrown in, doors shut
 const CUT_DRIVE_END = 9200;  // the van speeds away, Batman leaps after it
 const CUT_TOTAL = 10000;
 
+// ---------------------------------------------------------------
+// End-of-2-4 rescue cutscene: Batman batigarras the cage rope, the cage
+// lowers gently onto the arena floor and Robin steps out. Drawn as an
+// overlay on top of the still-rendered arena.
+// ---------------------------------------------------------------
+function drawRescueScene(now) {
+  const t = now - rescueStart;
+  ctx.fillStyle = 'rgba(2,4,10,0.55)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const boxW = 620, boxH = 96;
+  const boxX = (CANVAS_W - boxW) / 2, boxY = CANVAS_H - boxH - 22;
+  ctx.fillStyle = 'rgba(6,8,16,0.94)';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('¡DOS CARAS DERROTADO!', CANVAS_W / 2, boxY + 30);
+
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = '13px monospace';
+  let line1, line2;
+  if (t < 1500) {
+    line1 = 'Batman corta la última soga con la Batigarra...';
+    line2 = 'y baja la jaula suavemente hasta el piso.';
+  } else if (t < 3000) {
+    line1 = 'Robin: —Justo a tiempo. Sabía que vendrías.';
+    line2 = 'Batman: —Nunca solo, compañero.';
+  } else {
+    line1 = 'Vuelven a la BATICUEVA a preparar el próximo golpe.';
+    line2 = '';
+  }
+  ctx.fillText(line1, CANVAS_W / 2, boxY + 56);
+  if (line2) ctx.fillText(line2, CANVAS_W / 2, boxY + 76);
+  ctx.textAlign = 'left';
+
+  // top-of-screen title
+  ctx.fillStyle = '#f6d743';
+  ctx.font = 'bold 28px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROBIN A SALVO', CANVAS_W / 2, 60);
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------
+// Alfred + TV cutscene played on entry to the Batcave after 2-4. A
+// television projects a frozen Gotham (Mr. Freeze foreshadowing) while
+// Alfred asks Batman and Robin if they've seen the news.
+// ---------------------------------------------------------------
+function drawAlfredNewsScene(now) {
+  const t = now - alfredStart;
+  ctx.fillStyle = 'rgba(2,4,10,0.72)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // TV screen — big frozen Gotham skyline with drifting snow
+  const tvX = 90, tvY = 60, tvW = CANVAS_W - 180, tvH = 240;
+  ctx.fillStyle = '#2a2f3a';
+  ctx.fillRect(tvX - 12, tvY - 12, tvW + 24, tvH + 40);
+  ctx.fillStyle = '#101623';
+  ctx.fillRect(tvX, tvY, tvW, tvH);
+
+  // frozen sky gradient
+  const sg = ctx.createLinearGradient(0, tvY, 0, tvY + tvH);
+  sg.addColorStop(0, '#0d1830');
+  sg.addColorStop(0.6, '#264a6a');
+  sg.addColorStop(1, '#7fb5c8');
+  ctx.fillStyle = sg;
+  ctx.fillRect(tvX + 4, tvY + 4, tvW - 8, tvH - 8);
+
+  // frost pattern in corners
+  ctx.strokeStyle = 'rgba(230,240,255,0.35)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 12; i++) {
+    const cx = tvX + 4 + hash01(i * 3.1) * (tvW - 8);
+    const cy = tvY + 4 + hash01(i * 5.7) * 40;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const ang = k * Math.PI / 3;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * 6, cy + Math.sin(ang) * 6);
+    }
+    ctx.stroke();
+  }
+
+  // Gotham skyline covered in snow
+  const skylineBase = tvY + tvH - 60;
+  for (let i = 0; i < 9; i++) {
+    const bx = tvX + 10 + i * ((tvW - 20) / 9);
+    const bw = ((tvW - 20) / 9) - 6;
+    const bh = 60 + hash01(i * 2.3) * 90;
+    ctx.fillStyle = '#0f1728';
+    ctx.fillRect(bx, skylineBase - bh, bw, bh);
+    // snow cap on the roof
+    ctx.fillStyle = '#f0f4ff';
+    ctx.fillRect(bx - 2, skylineBase - bh - 4, bw + 4, 6);
+    // icy windows
+    for (let wy = 0; wy < 3; wy++) {
+      for (let wx = 0; wx < 2; wx++) {
+        const on = (i + wy + wx) % 3 === 0;
+        ctx.fillStyle = on ? '#b8dbef' : '#1a2436';
+        ctx.fillRect(bx + 6 + wx * (bw - 14), skylineBase - bh + 12 + wy * 22, 8, 10);
+      }
+    }
+    // giant icicle hanging from the roof edge
+    if (i % 2 === 0) {
+      ctx.fillStyle = 'rgba(180,220,240,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(bx + bw - 8, skylineBase - bh);
+      ctx.lineTo(bx + bw - 4, skylineBase - bh + 22);
+      ctx.lineTo(bx + bw, skylineBase - bh);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // frozen ground with cracked ice patterns
+  ctx.fillStyle = '#c5dcea';
+  ctx.fillRect(tvX + 4, skylineBase, tvW - 8, tvY + tvH - skylineBase - 4);
+  ctx.strokeStyle = 'rgba(80,110,140,0.6)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 14; i++) {
+    const sx = tvX + hash01(i * 7.1) * tvW;
+    const sy = skylineBase + 10 + hash01(i * 4.3) * 40;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + 30 + hash01(i * 9) * 40, sy + 6);
+    ctx.stroke();
+  }
+
+  // falling snow
+  for (let i = 0; i < 40; i++) {
+    const fx = tvX + ((hash01(i * 11.3) * tvW + t * 0.04) % tvW);
+    const fy = tvY + ((hash01(i * 4.7) * tvH + t * 0.06) % tvH);
+    ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.5 * hash01(i * 3.9)})`;
+    ctx.fillRect(fx, fy, 2, 2);
+  }
+
+  // NEWS crawl at the bottom of the TV screen
+  ctx.fillStyle = '#c0392b';
+  ctx.fillRect(tvX + 4, tvY + tvH - 26, tvW - 8, 22);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — ';
+  const offset = (t / 30) % (crawl.length * 8);
+  ctx.fillText(crawl + crawl, tvX + 10 - offset, tvY + tvH - 10);
+
+  // TV frame + power light + station bug
+  ctx.fillStyle = '#f6d743';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('GCN LIVE', tvX + tvW - 12, tvY + 20);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = Math.sin(t / 300) > 0 ? '#ff5e5e' : '#4a1616';
+  ctx.beginPath();
+  ctx.arc(tvX + tvW + 6, tvY + tvH + 14, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Alfred + Batman + Robin standing under the TV
+  const ay = tvY + tvH + 60;
+  drawAlfredSprite(CANVAS_W / 2 - 80, ay, 1.05);
+  // Batman silhouette (simplified)
+  ctx.fillStyle = '#131722';
+  ctx.fillRect(CANVAS_W / 2 + 20, ay - 6, 22, 60);
+  ctx.fillStyle = '#f0d6b0';
+  ctx.fillRect(CANVAS_W / 2 + 24, ay - 4, 14, 8);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(CANVAS_W / 2 + 26, ay + 8, 10, 4);
+  // Robin silhouette
+  drawRobinSprite(CANVAS_W / 2 + 60, ay - 8, 0.85, false, 0);
+
+  // dialogue box
+  const boxW = 620, boxH = 60;
+  const boxX = (CANVAS_W - boxW) / 2, boxY2 = CANVAS_H - boxH - 12;
+  ctx.fillStyle = 'rgba(6,8,16,0.94)';
+  ctx.fillRect(boxX, boxY2, boxW, boxH);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boxX, boxY2, boxW, boxH);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ALFRED', CANVAS_W / 2, boxY2 + 22);
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = '12px monospace';
+  const line = t < 3200
+    ? '—¿Han visto las noticias, señores?'
+    : '—Gotham se congela. Mr. Freeze está sembrando el pánico.';
+  ctx.fillText(line, CANVAS_W / 2, boxY2 + 46);
+  ctx.textAlign = 'left';
+}
+
+function drawAlfredSprite(x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  // legs (butler tux pants)
+  ctx.fillStyle = '#1a1e28';
+  ctx.fillRect(4, 42, 8, 22);
+  ctx.fillRect(14, 42, 8, 22);
+  // shoes
+  ctx.fillStyle = '#080a12';
+  ctx.fillRect(2, 62, 10, 4);
+  ctx.fillRect(14, 62, 10, 4);
+  // tux jacket
+  ctx.fillStyle = '#101422';
+  ctx.fillRect(2, 18, 22, 26);
+  // white shirt + bow tie
+  ctx.fillStyle = '#f0f4fa';
+  ctx.fillRect(10, 20, 6, 22);
+  ctx.fillStyle = '#8c1f2c';
+  ctx.beginPath();
+  ctx.moveTo(11, 22); ctx.lineTo(13, 24); ctx.lineTo(11, 26);
+  ctx.moveTo(15, 22); ctx.lineTo(13, 24); ctx.lineTo(15, 26);
+  ctx.closePath();
+  ctx.fill();
+  // head — pale skin, grey hair, moustache
+  ctx.fillStyle = '#f0d6b0';
+  ctx.fillRect(6, 2, 14, 16);
+  ctx.fillStyle = '#c9cdd6';
+  ctx.fillRect(5, 0, 16, 5);
+  ctx.fillRect(4, 4, 4, 6);
+  ctx.fillRect(18, 4, 4, 6);
+  // eyes
+  ctx.fillStyle = '#111';
+  ctx.fillRect(9, 8, 2, 2);
+  ctx.fillRect(15, 8, 2, 2);
+  // moustache
+  ctx.fillStyle = '#c9cdd6';
+  ctx.fillRect(9, 13, 8, 2);
+  ctx.restore();
+}
 function drawIntroScene(t, ct) {
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
   g.addColorStop(0, '#060812');
@@ -5791,6 +6093,27 @@ function loop(now) {
   if (state === 'playing' || state === 'levelcomplete') {
     update(dt);
     render(now);
+  } else if (state === 'rescue') {
+    render(now);
+    drawRescueScene(now);
+    if (now - rescueStart > 4500) {
+      postTwoFaceReturn = true;
+      const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
+      loadLevel(caveIdx);
+      state = 'alfredNews';
+      alfredStart = performance.now();
+    }
+  } else if (state === 'alfredNews') {
+    render(now);
+    drawAlfredNewsScene(now);
+    // hold on Alfred's briefing; a tap/click skips to the choice screen
+    const advance = now < jumpBufferUntil || now < shootBufferUntil ||
+      (now - alfredStart > 6500);
+    if (advance) {
+      jumpBufferUntil = 0; shootBufferUntil = 0;
+      state = 'choice';
+      if (level.cave) level.cave.choiceSel = 0;
+    }
   } else if (state === 'computer' || state === 'choice' || state === 'levelselect') {
     // Batcave UI: the frozen scene stays behind the expediente / choice /
     // replay panel

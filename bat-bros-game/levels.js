@@ -311,7 +311,11 @@ const LEVEL_SPECS = [
     // (as if resting on each deck), rest zones every 6 rows. Top of the
     // climb opens into the engine-room arena floor at row 6.
     platforms: [
-      { x: 1, y: 6, w: 18 },                       // engine-room ARENA floor
+      { x: 0, y: 6, w: 20 },                       // engine-room ARENA floor
+                                                   // (spans full width so
+                                                   // Batman can't fall off
+                                                   // the sides during the
+                                                   // Two-Face fight)
       { x: 4, y: 9, w: 12 },                       // catwalk 5 (narrow)
       { x: 3, y: 12, w: 4 }, { x: 13, y: 12, w: 4 }, // rest zone 2 + checkpoint
       { x: 2, y: 15, w: 16 },                      // catwalk 4 (wide)
@@ -373,13 +377,12 @@ const LEVEL_SPECS = [
       { x: 11, y: 9,  range: [7, 12], helmet: true },
     ],
     // birds sweep the ladder shaft in the CLEAR gaps between decks.
-    // Rows 11 / 20 / 29 are the middle rows of each gap — the birds'
+    // Rows 11 and 20 are the middle rows of each gap — the birds'
     // vertical bob (~10 px) still clears the catwalks above and below,
     // so they patrol the full width and actually cross the ladder.
     birds: [
       { x: 9, y: 11, range: [3, 16] },
       { x: 9, y: 20, range: [3, 16] },
-      { x: 9, y: 29, range: [3, 16] },
     ],
     bats: [[14, 12]],   // checkpoint on rest zone 2
     twoface: {
