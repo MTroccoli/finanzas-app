@@ -399,83 +399,146 @@ const LEVEL_SPECS = [
 // ACTO 3 — Mr. Freeze congela Gotham. Piso resbaladizo, enemigos
 // congelados que arrancan lentísimos y se descongelan al primer hit.
 // ============================================================
+// 3-1 — icy street. Reads like a beefed-up 1-1: small pyramids
+// for warm-up stomps, one wall that needs a grapple over the first
+// pit, then a mid-height stepped rooftop for the helmet thugs, and
+// a gable-house stair to finish. All heights within Batman's jump
+// arc (max ~3.5 tiles) with grapple anchors placed like 1-1.
 LEVEL_SPECS.push({
   name: '3-1',
-  frozen: true,          // triggers icy background + slippery friction
-  width: 80, height: 26, groundY: 24,
-  pits: [[18, 20], [46, 52]],
+  frozen: true,
+  width: 84, height: 26, groundY: 24,
+  pits: [[26, 28], [58, 61]],
   platforms: [
-    { x: 8, y: 21, w: 3 },
-    { x: 38, y: 21, w: 3 },
-    { x: 66, y: 21, w: 3 },
+    // stepped rooftop 1 — climbable staircase (2-tile jumps)
+    { x: 6, y: 22, w: 2 },
+    { x: 8, y: 20, w: 4 },
+    { x: 12, y: 22, w: 2 },
+    // mid-height rooftop past the first pit (reached by swinging)
+    { x: 36, y: 21, w: 5 },
+    // stepped roof 2 — small pyramid Batman can hop up
+    { x: 42, y: 22, w: 2 },
+    { x: 44, y: 20, w: 3 },
+    { x: 47, y: 22, w: 2 },
+    // ledge past the second pit
+    { x: 64, y: 21, w: 3 },
+    // gable-house stair on the right
+    { x: 72, y: 22, w: 2 },
+    { x: 74, y: 20, w: 5 },
+    { x: 79, y: 22, w: 2 },
   ],
+  // Only one grapple-required wall (Act-1 vocabulary). Everything else
+  // is stompable stairs.
   walls: [{ x: 30, w: 3, topRow: 18 }],
-  houses: [{ x: 54, w: 6, topRow: 21, baseRow: 24, style: 'brownstone' }],
-  swingPoints: [[31, 16], [49, 16]],
+  houses: [
+    { x: 74, w: 5, topRow: 17, baseRow: 20, style: 'gable' },
+  ],
+  // Anchor over the tall wall (like 1-1's [31,16]) plus two low
+  // lamps that let Batman swing across the pits at a moderate height.
+  swingPoints: [[31, 15], [54, 17], [67, 17]],
   coins: [
-    [9, 20], [39, 20], [67, 20],
+    [9, 19], [10, 19], [11, 19],
     [30, 17], [31, 17], [32, 17],
-    [56, 20], [57, 20],
-    [14, 23], [24, 23], [43, 23], [72, 23],
+    [37, 20], [38, 20], [39, 20],
+    [45, 19],
+    [64, 20], [65, 20],
+    [75, 19], [76, 19],
+    [4, 23], [17, 23], [42, 23], [55, 23], [70, 23], [82, 23],
   ],
   thugs: [
-    { x: 12, y: 24, range: [10, 16], frozen: true },
-    { x: 24, y: 24, range: [22, 29], frozen: true },
-    { x: 30, y: 18, range: [30, 32], frozen: true },
-    { x: 40, y: 24, range: [36, 44], frozen: true },
-    { x: 56, y: 21, range: [54, 59], frozen: true },
-    { x: 62, y: 24, range: [61, 66], frozen: true },
+    { x: 4, y: 24, range: [3, 6], frozen: true },
+    { x: 15, y: 24, range: [13, 18], frozen: true },
+    { x: 10, y: 20, range: [8, 11], frozen: true },
+    { x: 22, y: 24, range: [20, 25], frozen: true },
+    { x: 38, y: 21, range: [36, 40], helmet: true, frozen: true },
+    { x: 45, y: 20, range: [44, 46], frozen: true },
+    { x: 50, y: 24, range: [48, 55], helmet: true, frozen: true },
+    { x: 64, y: 21, range: [64, 66], helmet: true, frozen: true },
+    { x: 68, y: 24, range: [63, 71], frozen: true },
+    { x: 76, y: 20, range: [74, 78], frozen: true },
+    { x: 82, y: 24, range: [80, 83], frozen: true },
   ],
   birds: [
-    { x: 22, y: 21, range: [20, 27], frozen: true },
-    { x: 47, y: 20, range: [45, 53], frozen: true },
+    { x: 22, y: 20, range: [16, 28], frozen: true },
+    { x: 50, y: 18, range: [44, 58], frozen: true },
+    { x: 68, y: 20, range: [62, 74], frozen: true },
   ],
-  bats: [],
+  bats: [[45, 19]],
   spawn: { x: 2, y: 22 },
 });
 
-// 3-2 — twin gable-roof houses along the avenue, three helmeted thugs,
-// icy slopes across the block. Feels like an Act 1 rooftop chase gone
-// into a blizzard. The gable style is a triangular-roof house whose
-// solid box stays flat, but the render slaps a sharp icy pyramid on
-// top so the block LOOKS harder to climb.
+// 3-2 — mixed Act-1/Act-2 climb up frozen dock rooftops. Warm-up
+// pyramid, a tall building with a grapple over, a big gable-house
+// stepped roof (Act-1 vocabulary), and one Robin-friendly chain of
+// small platforms at the end. Every height sits within Batman's
+// jump arc from an adjacent step.
 LEVEL_SPECS.push({
   name: '3-2',
   frozen: true,
   width: 96, height: 30, groundY: 28,
-  pits: [[12, 13], [70, 76]],
+  pits: [[14, 16], [72, 76]],
   platforms: [
-    { x: 6, y: 25, w: 3 },
-    { x: 60, y: 25, w: 3 },
-    { x: 80, y: 25, w: 3 },
+    { x: 6, y: 26, w: 3 },
+    // warm-up pyramid before the first pit
+    { x: 8, y: 26, w: 2 },
+    { x: 10, y: 24, w: 3 },
+    // stepped rooftop past pit #1
+    { x: 20, y: 25, w: 2 },
+    { x: 22, y: 23, w: 4 },
+    { x: 26, y: 25, w: 2 },
+    // twin-gable stepped roof (mid-air)
+    { x: 42, y: 25, w: 2 },
+    { x: 44, y: 23, w: 3 },
+    { x: 47, y: 21, w: 3 },
+    { x: 50, y: 23, w: 3 },
+    { x: 53, y: 25, w: 2 },
+    // ledge before the last pit
+    { x: 62, y: 25, w: 3 },
+    // Robin double-jump chain (Batman can also climb via ladder wall
+    // at x=80, but the small platforms let Robin show off)
+    { x: 80, y: 25, w: 2 },
+    { x: 84, y: 23, w: 2 },
+    { x: 88, y: 21, w: 3 },
   ],
-  walls: [{ x: 32, w: 4, topRow: 22 }],
+  // One grapple-required tall wall (like 1-2's stepped skyline).
+  walls: [{ x: 32, w: 3, topRow: 20 }],
+  ladders: [
+    // ladders let Robin climb the tall wall without the grapple
+    { x: 32, topRow: 20, baseRow: 28 },
+    { x: 34, topRow: 20, baseRow: 28 },
+  ],
   houses: [
-    { x: 22, w: 6, topRow: 22, baseRow: 28, style: 'gable' },
-    { x: 42, w: 6, topRow: 22, baseRow: 28, style: 'gable' },
-    { x: 86, w: 4, topRow: 24, baseRow: 28, style: 'brownstone' },
+    { x: 88, w: 3, topRow: 18, baseRow: 21, style: 'brownstone' },
   ],
-  swingPoints: [[33, 18], [50, 18]],
+  // Grapple over the tall wall + one swing to make the twin-gable
+  // roof reachable from below.
+  swingPoints: [[33, 17], [46, 18], [66, 18]],
   coins: [
-    [5, 27], [18, 27], [55, 27], [66, 27],
-    [22, 21], [45, 21],
-    [80, 24], [83, 24],
+    [5, 27], [18, 27], [56, 27], [68, 27],
+    [10, 23], [22, 22],
+    [45, 22], [47, 20], [48, 20], [50, 22],
+    [62, 24], [63, 24],
+    [80, 24], [84, 22], [88, 20],
+    [30, 19], [31, 19], [32, 19],
   ],
   thugs: [
     { x: 6, y: 28, range: [3, 10], frozen: true },
-    { x: 16, y: 28, range: [14, 22], frozen: true },
-    { x: 24, y: 22, range: [22, 28], helmet: true, frozen: true },
-    { x: 44, y: 22, range: [42, 48], helmet: true, frozen: true },
-    { x: 56, y: 28, range: [54, 60], frozen: true },
-    { x: 66, y: 28, range: [62, 69], frozen: true },
-    { x: 82, y: 25, range: [80, 83], helmet: true, frozen: true },
-    { x: 90, y: 28, range: [88, 95], frozen: true },
+    { x: 12, y: 28, range: [12, 13], frozen: true },
+    { x: 22, y: 23, range: [22, 25], helmet: true, frozen: true },
+    { x: 26, y: 28, range: [22, 30], frozen: true },
+    { x: 38, y: 28, range: [36, 42], frozen: true },
+    { x: 47, y: 21, range: [47, 49], helmet: true, frozen: true },
+    { x: 56, y: 28, range: [54, 62], frozen: true },
+    { x: 65, y: 28, range: [62, 71], frozen: true },
+    { x: 80, y: 25, range: [80, 81], helmet: true, frozen: true },
+    { x: 89, y: 18, range: [88, 90], helmet: true, frozen: true },
+    { x: 92, y: 28, range: [90, 95], frozen: true },
   ],
   birds: [
-    { x: 30, y: 20, range: [26, 36], frozen: true },
-    { x: 66, y: 24, range: [63, 69], frozen: true },
+    { x: 30, y: 22, range: [26, 36], frozen: true },
+    { x: 66, y: 20, range: [60, 72], frozen: true },
   ],
-  bats: [],
+  bats: [[47, 20]],
   spawn: { x: 2, y: 26 },
 });
 

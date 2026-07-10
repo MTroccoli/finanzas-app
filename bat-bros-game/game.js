@@ -5,17 +5,20 @@
 // ---------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------
-const keys = { left: false, right: false, jump: false, shoot: false, down: false, up: false };
+const keys = { left: false, right: false, jump: false, shoot: false, grapple: false, down: false, up: false };
 
 // Jump/shoot presses are buffered by timestamp (not sampled per-frame), so a
 // quick tap always registers even if it happens to fall between two frames.
 let jumpBufferUntil = 0;
 let shootBufferUntil = 0;
+let grappleBufferUntil = 0;
 let coyoteUntil = 0;
 let lastShotAt = -Infinity;
+let lastGrappleShotAt = -Infinity;
 
 function requestJump() { jumpBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 function requestShoot() { shootBufferUntil = performance.now() + JUMP_BUFFER_MS; }
+function requestGrapple() { grappleBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 
 // Act 3 co-op: hot-swap Batman <-> Robin. The one you leave becomes the
 // companion that trails behind; the one you pick up gets the controls,
@@ -105,6 +108,7 @@ window.addEventListener('keydown', e => {
   // tryGrabLadder), so it never causes a stray hop.
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = true;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
+  if (['KeyZ', 'KeyC'].includes(e.code)) { keys.grapple = true; requestGrapple(); }
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = true;
   if (e.code === 'KeyR') restartGame();
   // co-op character swap (Act 3+)
@@ -117,6 +121,7 @@ window.addEventListener('keyup', e => {
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = false;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
+  if (['KeyZ', 'KeyC'].includes(e.code)) keys.grapple = false;
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = false;
 });
 
@@ -136,6 +141,9 @@ bindButton('btn-left', () => keys.left = true, () => keys.left = false);
 bindButton('btn-right', () => keys.right = true, () => keys.right = false);
 bindButton('btn-jump', () => { keys.jump = true; requestJump(); }, () => keys.jump = false);
 bindButton('btn-shoot', () => { keys.shoot = true; requestShoot(); }, () => keys.shoot = false);
+if (document.getElementById('btn-grapple')) {
+  bindButton('btn-grapple', () => { keys.grapple = true; requestGrapple(); }, () => keys.grapple = false);
+}
 // rope reel (batigarra): up contracts, down extends
 bindButton('btn-up', () => keys.up = true, () => keys.up = false);
 bindButton('btn-down', () => keys.down = true, () => keys.down = false);
@@ -232,20 +240,28 @@ const btnDown = document.getElementById('btn-down');
 // independent of health (small/big), so it never vanishes on a hit.
 function updateWeaponButton() {
   if (!btnShoot) return;
-  const garra = currentGadget === 'batigarra';
-  btnShoot.style.display = currentGadget ? 'flex' : '';
-  btnShoot.textContent = garra ? '🪝' : '🪃';
-  // The rope reel arrows are only useful with the batigarra — hide
-  // them under the batarang so the touch pad doesn't clutter with
-  // dead buttons that do nothing.
+  const hasBatarang = playerCanUse('batarang');
+  const hasGarra = playerCanUse('batigarra');
+  // Batarang throw button (🪃) — visible whenever the batarang is in
+  // the active character's inventory.
+  btnShoot.style.display = hasBatarang ? 'flex' : 'none';
+  btnShoot.textContent = '🪃';
+  // Grapple fire button (🪝) — visible only when Batman owns the
+  // batigarra; Robin never carries it.
+  const btnGrapple = document.getElementById('btn-grapple');
+  if (btnGrapple) {
+    btnGrapple.style.display = hasGarra ? 'flex' : 'none';
+    btnGrapple.textContent = '🪝';
+  }
+  // The rope reel arrows are only useful WHILE swinging on the
+  // batigarra rope. Show them when Batman owns it, hide otherwise.
   const btnUp = document.getElementById('btn-up');
   const btnDown = document.getElementById('btn-down');
-  if (btnUp) btnUp.style.display = garra ? '' : 'none';
-  if (btnDown) btnDown.style.display = garra ? '' : 'none';
+  if (btnUp) btnUp.style.display = hasGarra ? '' : 'none';
+  if (btnDown) btnDown.style.display = hasGarra ? '' : 'none';
   if (hud.ammoWrap) {
-    const show = currentGadget === 'batarang';
-    hud.ammoWrap.style.display = show ? '' : 'none';
-    if (show) hud.ammo.textContent = batarangAmmo;
+    hud.ammoWrap.style.display = hasBatarang ? '' : 'none';
+    if (hasBatarang) hud.ammo.textContent = batarangAmmo;
   }
 }
 function updateAmmoHud() {
@@ -275,10 +291,16 @@ let heroMessageUntil = 0;
 let allCoinsBonus = false;
 let frameTime = 0;
 let currentPowerState = 'small'; // HEALTH only: small | big — carries over between levels, resets on death
-let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
+let currentGadget = null;        // deprecated but kept for backward compat: mirrors the FIRST owned tool
+// New multi-slot inventory. Batman can stack tools (Act 3 has 2 slots),
+// so choosing the batigarra after the batarang keeps BOTH — the choice
+// screen ACCUMULATES, it never replaces. Robin ignores this and always
+// carries the batarang.
+let ownedGadgets = { batarang: false, batigarra: false };
 let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
 let caveHubReturn = false;       // player warped to the Batcave via the ⌂ button from Act 3+ (silent Alfred, skip news)
+let lastPlayedLevel = 0;         // remembered so Batcave door returns Batman to whichever level he was actually on
 // Persist "beat Two-Face" so Continue from a fresh page reload also
 // lands the news feed instead of the Two-Face expediente.
 function saveAct2Beaten() {
@@ -333,11 +355,20 @@ function setPowerState(newState) {
 
 // Equip a permanent gadget (from the Batcave choice). Kept through hits and
 // through replaying earlier levels; shown by the on-screen controls.
+// Add a gadget to the arsenal (never replace). Robin's kit stays as
+// batarang-only regardless of Batman's inventory. The most recently
+// added tool becomes the "active" one for legacy checks that still
+// read player.gadget.
 function setGadget(g) {
-  player.gadget = g;
+  if (g === 'batarang' || g === 'batigarra') ownedGadgets[g] = true;
+  if (player) player.gadget = g;
   currentGadget = g;
   updateWeaponButton();
   if (playerName) saveGadgetChoice(playerName, g);
+}
+function playerCanUse(gadget) {
+  if (activeChar === 'robin') return gadget === 'batarang';
+  return !!ownedGadgets[gadget];
 }
 
 function spawnBatarang() {
@@ -654,6 +685,9 @@ function loadLevel(idx) {
   if (level && level.chase) exitChaseMode();
   levelIndex = idx;
   level = buildLevel(LEVEL_SPECS[idx]);
+  // Remember the last real level so a Batcave return can walk Batman
+  // back to where he actually was (any non-cave level counts).
+  if (!level.cave) lastPlayedLevel = idx;
   // Armor upgrade: force every fresh level spawn back up to big
   if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
@@ -757,12 +791,11 @@ function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   armored = false;
   caveHubReturn = false;
-  // Auto-detect: if Continue drops the player back in the CUEVA (or
-  // past it) after they already beat Two-Face on a previous run, keep
-  // showing the frozen-Gotham news instead of the Two-Face expediente.
+  ownedGadgets = { batarang: false, batigarra: false };
   postTwoFaceReturn = loadAct2Beaten();
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
+  if (currentGadget) ownedGadgets[currentGadget] = true;
   // If continuing past the Batcave without a weapon, send back to pick one
   const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
   if (startLevelIndex > caveIdx && caveIdx >= 0 && !currentGadget) {
@@ -1147,7 +1180,10 @@ function killPlayer() {
   lives--;
   hud.lives.textContent = Math.max(lives, 0);
   if (lives <= 0) {
-    if (level.chase) exitChaseMode();
+    // Keep chase-mode (portrait canvas + chase-active body class) on
+    // during game-over so the overlay menu stays in the same one-hand
+    // portrait framing. exitChaseMode fires on the next loadLevel when
+    // the player restarts.
     state = 'gameover';
     // record the game over for this player (shown on the Batcave computer)
     gameOverCount++;
@@ -1946,14 +1982,22 @@ function updatePlaying(dt) {
     companion.onGround = player.onGround;
   }
 
-  // batarang / batigarra throw (the batigarra's trigger doubles as the rope
-  // reel while swinging, so it never fires mid-swing)
-  const canShoot = player.gadget === 'batarang' ||
-    (player.gadget === 'batigarra' && !player.swinging);
-  if (now < shootBufferUntil && canShoot && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+  // Two independent fire buttons so a player who owns both tools can
+  // use each one from its own key: X = batarang throw, Z = batigarra
+  // grapple. The batigarra never fires mid-swing (that press is
+  // already consumed by the rope release).
+  if (now < shootBufferUntil && playerCanUse('batarang') && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+    player.gadget = 'batarang';
     spawnBatarang();
     lastShotAt = now;
     shootBufferUntil = 0;
+  }
+  if (now < grappleBufferUntil && playerCanUse('batigarra') && !player.swinging &&
+      now - lastGrappleShotAt > SHOOT_COOLDOWN_MS) {
+    player.gadget = 'batigarra';
+    spawnBatarang();
+    lastGrappleShotAt = now;
+    grappleBufferUntil = 0;
   }
 
   // fell into a pit
@@ -2801,10 +2845,18 @@ function update(dt) {
   } else if (state === 'levelcomplete') {
     stateTimer -= dt * (1000 / 60);
     if (stateTimer <= 0) {
-      // After the Act 2 Batcave visit the next level is 3-1 (the frozen
-      // city), not the Act 2 replay that comes right after CUEVA in
-      // LEVEL_SPECS. Jump there explicitly when postTwoFaceReturn is on.
+      // Exiting the Batcave through the right-hand door: on a HUB
+      // visit (Act 3+ ⌂ button) return Batman to whichever level he was
+      // actually playing. On a FRESH post-2-4 arrival — the first time
+      // — kick off Act 3 with 3-1. Falls through to level+1 otherwise
+      // (Act 1 -> Act 2 flow).
       if (level && level.cave && postTwoFaceReturn) {
+        if (caveHubReturn && lastPlayedLevel && !LEVEL_SPECS[lastPlayedLevel].cave) {
+          caveHubReturn = false;
+          loadLevel(lastPlayedLevel);
+          state = 'playing';
+          return;
+        }
         const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
         if (idx31 >= 0) {
           loadLevel(idx31);
@@ -3962,18 +4014,40 @@ function drawChoiceScreen(now) {
   ctx.fillStyle = 'rgba(2,4,10,0.82)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('NUEVO EQUIPO DISPONIBLE', CANVAS_W / 2, 60);
+  ctx.fillText('NUEVO EQUIPO DISPONIBLE', CANVAS_W / 2, 44);
   ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
-  ctx.fillText('La Batcomputadora fabricó dos herramientas — elegí', CANVAS_W / 2, 84);
+  ctx.fillText('Cada elección se ACUMULA — Batman puede llevar los dos gadgets a la vez', CANVAS_W / 2, 68);
+
+  // Equipment slots — show what's already stashed on the utility belt
+  // so the player sees the choice adds a slot, not replaces one.
+  const slotY = 78;
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(CANVAS_W / 2 - 200, slotY, 400, 24);
+  ctx.strokeStyle = 'rgba(127,212,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(CANVAS_W / 2 - 200, slotY, 400, 24);
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('CINTURÓN:', CANVAS_W / 2 - 190, slotY + 16);
+  const slots = [
+    { label: '🪃 BATARANG', on: ownedGadgets.batarang, c: '#ffe066' },
+    { label: '🪝 BATIGARRA', on: ownedGadgets.batigarra, c: '#7fd4ff' },
+    { label: '🛡 ARMADURA', on: armored, c: '#c95a3a' },
+  ];
+  ctx.font = 'bold 11px monospace';
+  slots.forEach((s, i) => {
+    const sx = CANVAS_W / 2 - 90 + i * 100;
+    ctx.fillStyle = s.on ? s.c : 'rgba(255,255,255,0.25)';
+    ctx.fillText(s.label, sx, slotY + 16);
+  });
 
   // Act 2 Batcave: after the Two-Face rescue Batman can either get the
   // gadget he didn't pick in Act 1, or lock in an armor upgrade that
   // makes every spawn start as big Batman (soaks one extra hit).
   const cards = postTwoFaceReturn
     ? [
-        currentGadget === 'batarang'
-          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] }
-          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
+        ownedGadgets.batarang
+          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['Se SUMA al batarang', 'Herramienta de movilidad', 'Control total del balanceo'] }
+          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Se SUMA a la batigarra', 'Arma arrojadiza', 'Derriba enemigos a distancia'] },
         { x: 424, title: '2. ARMADURA', c: '#c95a3a', lines: ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'] },
       ]
     : [
@@ -4048,21 +4122,23 @@ function drawChoiceScreen(now) {
 
 function chooseCaveWeapon() {
   const cv = level.cave;
+  // Every pick ADDS to Batman's arsenal — nothing is ever replaced.
+  // The choice screen offers the tool(s) he doesn't already own plus
+  // the armor upgrade slot.
   if (postTwoFaceReturn) {
-    // Act 2: option 1 is the weapon Batman DIDN'T pick in Act 1, option
-    // 2 is the armor upgrade (permanent — every spawn starts big).
     if (cv.choiceSel === 0) {
-      const otherWeapon = currentGadget === 'batarang' ? 'batigarra' : 'batarang';
+      // whichever weapon isn't in the arsenal yet
+      const otherWeapon = ownedGadgets.batarang ? 'batigarra' : 'batarang';
       cv.weaponChosen = otherWeapon;
       setGadget(otherWeapon);
     } else {
       armored = true;
     }
   } else {
-    cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
-    setGadget(cv.weaponChosen);   // permanent tool, independent of health
+    const chosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
+    cv.weaponChosen = chosen;
+    setGadget(chosen);
   }
-  // suit Batman up so he can eat one hit before dropping down
   if (player.powerState === 'small') setPowerState('big');
   lives++;
   hud.lives.textContent = lives;

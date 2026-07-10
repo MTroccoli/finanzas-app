@@ -361,6 +361,22 @@ canvas {
     z-index: 5;
   }
   #chase-controls .touch-jump { width: 90px; height: 90px; }
+
+  /* Chase game over / overlay menu: keep the same portrait framing so
+     the buttons are still reachable in one thumb-hold and don't spill
+     off screen sideways. Overrides the desktop 800×480 layout. */
+  body.chase-active #overlay { align-items: flex-start; padding-top: 40px; }
+  body.chase-active .overlay-box {
+    width: min(90vw, 440px);
+    max-height: 88vh;
+    padding: 18px;
+    overflow-y: auto;
+  }
+  body.chase-active .menu-btn { width: 100%; margin: 8px 0; padding: 14px; }
+  body.chase-active .menu-logo { font-size: 26px; }
+  body.chase-active #overlay-title { font-size: 20px; }
+  body.chase-active #overlay-msg { font-size: 13px; line-height: 1.4; }
+  body.chase-active #overlay-controls { flex-direction: column; gap: 6px; }
 }
 
 /* Phones in landscape: the game fills the whole screen edge to edge, the
