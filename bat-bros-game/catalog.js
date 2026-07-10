@@ -109,6 +109,13 @@ const TWOFACE_THUG_SPAWN_INTERVAL = 6000;
 const TWOFACE_THUG_SPAWN_INTERVAL_RAGE = 3400;
 const TWOFACE_CAGE_MAX_CUTS = 3;             // 3 cuts and Robin drops into the drink
 
+// coin-flip attack: after Batman's 2nd and 4th hits, Two-Face pulls out
+// his coin. Heads = 3 bullets to jump over, tails = 1 thug + 1 bird
+const TWOFACE_COIN_FLIP_MS = 1500;
+const TWOFACE_BULLET_COUNT = 3;
+const TWOFACE_BULLET_INTERVAL = 550;
+const TWOFACE_BULLET_SPEED = 3.4;
+
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
 // ---------------------------------------------------------------
@@ -271,6 +278,12 @@ function buildLevel(spec) {
         cutTimer: 0,     // performance.now() time to start advancing
         cutStart: 0,     // when the cutting animation began
         nextThugAt: 0,   // when to spawn the next distraction thug
+        coinFlipAt: 0,   // start of the special-attack coin animation
+        coinAngle: 0,
+        coinResult: null,
+        bullets: [],     // { x, y, vx, alive } — jump-over projectiles
+        bulletsFired: 0,
+        nextBulletAt: 0,
         minX: (twoface.arenaMinX ?? 26) * TILE,
         maxX: (twoface.arenaMaxX ?? width - 3) * TILE,
         triggerX: (twoface.triggerX ?? 28) * TILE,

@@ -991,6 +991,10 @@ function killPlayer() {
     tf.cutStart = 0;
     tf.nextThugAt = 0;
     tf._robinDropAt = 0;
+    tf.coinFlipAt = 0;
+    tf.coinResult = null;
+    tf.bullets = [];
+    tf.bulletsFired = 0;
     if (tf.cage) {
       tf.cage.cutsCount = 0;
       tf.cage.y = tf.cage.initialY;
@@ -1385,13 +1389,25 @@ function updateTwoFace(dt, now) {
     tf.nextThugAt = now + (enraged ? TWOFACE_THUG_SPAWN_INTERVAL_RAGE : TWOFACE_THUG_SPAWN_INTERVAL);
   }
 
+  // === special-attack bullets: 3 slow-moving coins-turned-projectiles that
+  // arc across the arena. Batman jumps over each one.
+  for (const b of tf.bullets) {
+    if (!b.alive) continue;
+    b.x += b.vx * dt;
+    if (b.x < TILE || b.x > level.pixelWidth - TILE) { b.alive = false; continue; }
+    if (aabbOverlap(player, { x: b.x - 8, y: b.y - 8, w: 16, h: 16 })) {
+      b.alive = false;
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+  tf.bullets = tf.bullets.filter(b => b.alive);
+
   // === Batman's hits on Two-Face
   const takeHit = (source) => {
-    if (now < tf.hitUntil || tf.state === 'stunned') return;
+    if (now < tf.hitUntil || tf.state === 'stunned' || tf.state === 'coin_flip' || tf.state === 'shooting') return;
     tf.hp--;
     tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
-    tf.stunUntil = now + TWOFACE_STUN_MS;
-    tf.state = 'stunned';
     score += 400;
     hud.score.textContent = score;
     triggerScreenShake(now, 3, 180);
@@ -1400,9 +1416,76 @@ function updateTwoFace(dt, now) {
       tf.deadAt = now;
       score += 5000;
       hud.score.textContent = score;
+      if (source === 'stomp') player.vy = STOMP_BOUNCE;
+      return;
+    }
+    // hit counter: hp goes 5→4→3→2→1. 2nd hit → hp=3, 4th hit → hp=1.
+    // On those hits, Two-Face pulls out his coin and either fires 3
+    // bullets or drops a thug + a bird pair.
+    const hitsSoFar = tf.maxHp - tf.hp;
+    if (hitsSoFar === 2 || hitsSoFar === 4) {
+      tf.state = 'coin_flip';
+      tf.coinFlipAt = now;
+      tf.coinAngle = 0;
+      tf.coinResult = null;
+      tf.bulletsFired = 0;
+    } else {
+      tf.stunUntil = now + TWOFACE_STUN_MS;
+      tf.state = 'stunned';
     }
     if (source === 'stomp') player.vy = STOMP_BOUNCE;
   };
+
+  // === coin_flip: animate the coin, then commit to bullets or thugs
+  if (tf.state === 'coin_flip') {
+    tf.coinAngle += 0.32 * dt;
+    if (now - tf.coinFlipAt >= TWOFACE_COIN_FLIP_MS) {
+      tf.coinResult = Math.random() < 0.5 ? 'bullets' : 'thugs';
+      if (tf.coinResult === 'bullets') {
+        tf.state = 'shooting';
+        tf.bulletsFired = 0;
+        tf.nextBulletAt = now;
+      } else {
+        // 1 thug from Two-Face's side, 1 bird from above
+        level.thugs.push({
+          x: tf.maxX - TILE, y: tf.floorRow * TILE - 26, w: 24, h: 26,
+          minX: tf.minX, maxX: tf.maxX,
+          vx: -1.6, alive: true, helmet: false, bossSpawn: true,
+        });
+        level.birds.push({
+          x: tf.maxX - TILE * 2, y: tf.floorRow * TILE - 90,
+          baseY: tf.floorRow * TILE - 90,
+          w: 26, h: 20,
+          minX: tf.minX, maxX: tf.maxX,
+          vx: -2.0, alive: true, bossSpawn: true,
+        });
+        tf.state = 'patrol';
+        tf.cutTimer = now + (enraged ? TWOFACE_ROPE_CUT_INTERVAL_RAGE : TWOFACE_ROPE_CUT_INTERVAL);
+        tf.vx = -Math.abs(TWOFACE_PATROL_SPEED);
+      }
+    }
+  }
+
+  // === shooting: fire 3 bullets at a slow tempo so each can be jumped
+  if (tf.state === 'shooting') {
+    if (tf.bulletsFired < TWOFACE_BULLET_COUNT && now >= tf.nextBulletAt) {
+      // fire toward Batman
+      const dir = (player.x + player.w / 2) < (tf.x + tf.w / 2) ? -1 : 1;
+      tf.bullets.push({
+        x: tf.x + tf.w / 2, y: tf.y + tf.h * 0.4,
+        vx: dir * TWOFACE_BULLET_SPEED,
+        alive: true, born: now,
+      });
+      tf.bulletsFired++;
+      tf.nextBulletAt = now + TWOFACE_BULLET_INTERVAL;
+      tf.facing = dir;
+    }
+    if (tf.bulletsFired >= TWOFACE_BULLET_COUNT && now >= tf.nextBulletAt + 500) {
+      tf.state = 'patrol';
+      tf.cutTimer = now + (enraged ? TWOFACE_ROPE_CUT_INTERVAL_RAGE : TWOFACE_ROPE_CUT_INTERVAL);
+      tf.vx = tf.x < (tf.minX + tf.maxX) / 2 ? Math.abs(TWOFACE_PATROL_SPEED) : -Math.abs(TWOFACE_PATROL_SPEED);
+    }
+  }
 
   // stomp: allowed in every non-idle state so intercepting a cut is possible
   const stomped = !player.swinging && player.vy > 1 &&
@@ -3480,6 +3563,18 @@ function houseAt(tx) {
   return null;
 }
 
+function tileInsideHouse(tx, ty) {
+  // A tile counts as "inside a house" only if it falls in that specific
+  // house's rectangle. Iterating on tx alone misidentifies stacked
+  // containers at the same columns and made drawTiles skip drawing solid
+  // tiles that were still there (catwalks, arena floor) — so Batman
+  // walked on invisible surfaces. Check topRow..baseRow-1 too.
+  for (const hs of level.houses) {
+    if (tx >= hs.x && tx < hs.x + hs.w && ty >= hs.topRow && ty < hs.baseRow) return true;
+  }
+  return false;
+}
+
 function drawTiles() {
   const tx0 = Math.floor(camera.x / TILE);
   const tx1 = Math.ceil((camera.x + CANVAS_W) / TILE);
@@ -3490,8 +3585,7 @@ function drawTiles() {
       if (!level.solid[ty][tx]) continue;
       const px = tx * TILE - camera.x, py = ty * TILE - camera.y;
       // gabled houses paint their own roof + facade in drawHouses()
-      const hs = houseAt(tx);
-      if (hs && ty < hs.baseRow) continue;
+      if (tileInsideHouse(tx, ty)) continue;
       // grapple towers paint their own brick facade + roof in drawWalls();
       // in the cave, "walls" are plain rock terraces drawn right here
       if (!level.cave && ty < level.groundY && wallAt(tx)) continue;
@@ -3519,6 +3613,40 @@ function drawTiles() {
           ctx.fillRect(px + TILE * 0.35, py, TILE * 0.3, TILE);
         }
         ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+        continue;
+      }
+
+      // Ship's hold (2-4 arena + climb): render as riveted steel deck
+      // plates so the floors read as real decks, not just dark tiles.
+      const shipInterior = level.twoface != null;
+      if (shipInterior) {
+        const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
+        // steel body with a warmer diesel-lit tone
+        ctx.fillStyle = '#3a4658';
+        ctx.fillRect(px, py, TILE, TILE);
+        // subtle diagonal panel wear
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px + 4, py + TILE - 4); ctx.lineTo(px + TILE - 4, py + 4);
+        ctx.stroke();
+        // rivets in the corners
+        ctx.fillStyle = '#151b26';
+        for (const [rx, ry] of [[4, 4], [TILE - 4, 4], [4, TILE - 4], [TILE - 4, TILE - 4]]) {
+          ctx.beginPath(); ctx.arc(px + rx, py + ry, 1.4, 0, Math.PI * 2); ctx.fill();
+        }
+        if (exposedTop) {
+          // painted safety edge on walkable surfaces
+          ctx.fillStyle = '#6b7484';
+          ctx.fillRect(px, py, TILE, 5);
+          ctx.fillStyle = '#f6d743';
+          ctx.fillRect(px, py + 3, TILE, 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.4)';
+          ctx.fillRect(px, py + 5, TILE, 1);
+        }
+        // panel seam between tiles
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
         ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
         continue;
       }
@@ -5046,6 +5174,70 @@ function drawTwoFace(t) {
       ctx.lineTo(bladeX - 10, py + 22);
       ctx.stroke();
     }
+
+    // coin_flip animation — the same trademark two-headed coin, spinning
+    // above his head; the visible face determines what attack comes next
+    if (tf.state === 'coin_flip') {
+      const coinY = py - 30 - Math.abs(Math.sin(tf.coinAngle)) * 34;
+      const scaleX = Math.cos(tf.coinAngle * 3);
+      ctx.save();
+      ctx.translate(px + bw / 2, coinY);
+      ctx.scale(scaleX, 1);
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      if (Math.abs(scaleX) > 0.3) {
+        ctx.fillStyle = '#b8860b';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('$', 0, 3);
+      }
+      ctx.restore();
+    }
+
+    // shooting: muzzle flash telegraph on his hand each time a bullet is
+    // about to leave
+    if (tf.state === 'shooting') {
+      const armAng = tf.facing > 0 ? 0 : Math.PI;
+      const hx = px + bw / 2 + Math.cos(armAng) * (bw * 0.6);
+      const hy = py + bh * 0.35;
+      ctx.strokeStyle = '#c9a53a';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(px + bw / 2, py + bh * 0.32);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      const flash = Math.sin(performance.now() / 60) > 0.5;
+      if (flash) {
+        ctx.fillStyle = '#ffdb6a';
+        ctx.beginPath();
+        ctx.arc(hx + tf.facing * 4, hy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // bullets in flight — brass slugs (drawn regardless of Two-Face's state
+  // so they keep flying through his stun animations)
+  for (const b of tf.bullets) {
+    if (!b.alive) continue;
+    const bx = b.x - camera.x, by = b.y - camera.y;
+    ctx.fillStyle = '#d4a027';
+    ctx.beginPath();
+    ctx.ellipse(bx, by, 6, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#7a5a10';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // motion streak
+    ctx.strokeStyle = 'rgba(255,220,120,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx - Math.sign(b.vx) * 14, by);
+    ctx.stroke();
   }
 
   // HP pips above his head (only once the fight is live)
