@@ -17,6 +17,45 @@ let lastShotAt = -Infinity;
 function requestJump() { jumpBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 function requestShoot() { shootBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 
+// Act 3 co-op: hot-swap Batman <-> Robin. The one you leave becomes the
+// companion that trails behind; the one you pick up gets the controls,
+// with Robin's forced batarang loadout and double-jump ability.
+function switchCharacter() {
+  if (!companion) return;
+  const swap = companion;
+  companion = {
+    x: player.x, y: player.y,
+    vx: player.vx, vy: player.vy,
+    w: player.w, h: player.h,
+    facing: player.facing,
+    onGround: player.onGround,
+    powerState: player.powerState,
+    gadget: player.gadget,
+    isCompanion: true,
+    isRobin: activeChar === 'batman' ? false : true, // now this one is the one you left
+    jumpsUsed: 0, walkPhase: 0,
+  };
+  player = {
+    x: swap.x, y: swap.y,
+    vx: swap.vx, vy: swap.vy,
+    w: swap.w, h: swap.h,
+    facing: swap.facing, dead: false,
+    onGround: swap.onGround,
+    powerState: swap.powerState,
+    gadget: swap.gadget,
+    swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
+    swingMinR: null,
+    climbing: false,
+    walkDist: swap.walkPhase || 0,
+    jumpsUsed: 0,
+  };
+  activeChar = activeChar === 'batman' ? 'robin' : 'batman';
+  // Robin flies with the batarang only; Batman keeps his last chosen tool
+  currentGadget = player.gadget;
+  currentPowerState = player.powerState;
+  updateWeaponButton();
+}
+
 window.addEventListener('keydown', e => {
   if (state === 'cutscene' && ['ArrowUp', 'KeyW', 'Space', 'Enter'].includes(e.code)) {
     startGame();
@@ -55,6 +94,8 @@ window.addEventListener('keydown', e => {
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = true;
   if (e.code === 'KeyR') restartGame();
+  // co-op character swap (Act 3+)
+  if ((e.code === 'KeyT' || e.code === 'KeyQ') && state === 'playing') { switchCharacter(); e.preventDefault(); }
   if (['Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -179,6 +220,12 @@ let armored = false;             // Act 2 armor upgrade: every spawn starts as '
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
 let rescueStart = 0;             // performance.now() when the 2-4 rescue cutscene began
 let alfredStart = 0;             // performance.now() when Alfred's news cutscene began
+
+// Act 3 co-op: Batman and Robin play together. The active one gets user
+// input; the other is stored here and follows behind as a companion.
+// Robin's only tool is the batarang, plus a double-jump-with-somersault.
+let activeChar = 'batman';       // 'batman' | 'robin'
+let companion = null;            // { x, y, vx, vy, facing, w, h, powerState, gadget, isCompanion, walkPhase }
 let batarangAmmo = BATARANG_MAX_AMMO;
 let batarangs = [];
 let grappleCooldownUntil = 0;
@@ -543,6 +590,31 @@ function loadLevel(idx) {
   if (level.name && level.name.startsWith('3-') && lives < 5) {
     lives = 5;
     hud.lives.textContent = 5;
+  }
+  // Act 3 also introduces the co-op mechanic: Robin walks in beside
+  // Batman, and either can be swapped in as the controlled character.
+  if (level.name && level.name.startsWith('3-')) {
+    if (!companion || (activeChar === 'batman' && companion.gadget !== 'batarang')) {
+      companion = {
+        x: player.x - 34, y: player.y,
+        w: 22, h: 30,
+        vx: 0, vy: 0, facing: 1,
+        onGround: true,
+        powerState: 'small',
+        gadget: 'batarang',
+        isCompanion: true,
+        isRobin: activeChar === 'batman',
+        jumpsUsed: 0,
+        walkPhase: 0,
+      };
+    } else {
+      // keep the companion but re-align them next to Batman on level load
+      companion.x = player.x - 34;
+      companion.y = player.y;
+      companion.onGround = true;
+    }
+  } else {
+    companion = null;
   }
   // Act 2 Batcave return: Batman walks in with Robin at his side, and
   // Alfred is waiting halfway to the batcomputer with the news.
@@ -1700,12 +1772,21 @@ function updatePlaying(dt) {
 
     // jump: buffered press + coyote time, so a tap always registers even if it
     // lands a frame or two before touching ground / after leaving a ledge
-    if (player.onGround) coyoteUntil = now + COYOTE_MS;
+    if (player.onGround) { coyoteUntil = now + COYOTE_MS; player.jumpsUsed = 0; }
     if (now < jumpBufferUntil && now < coyoteUntil) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
+      player.jumpsUsed = 1;
       jumpBufferUntil = 0;
       coyoteUntil = 0;
+    } else if (activeChar === 'robin' && now < jumpBufferUntil &&
+               !player.onGround && (player.jumpsUsed || 0) < 2) {
+      // Robin's aerial double jump — a little weaker than the first, plus a
+      // 400 ms somersault animation window the renderer draws through
+      player.vy = JUMP_VELOCITY * 0.92;
+      player.jumpsUsed = 2;
+      player.somersaultUntil = now + 400;
+      jumpBufferUntil = 0;
     }
     if (!keys.jump && player.vy < JUMP_VELOCITY * JUMP_CUT) {
       player.vy = JUMP_VELOCITY * JUMP_CUT;
@@ -1723,6 +1804,18 @@ function updatePlaying(dt) {
 
   updateBoats(dt);
   updateCranes(dt, now);
+  // Act 3 co-op companion — follows behind the active character
+  if (companion) {
+    const targetX = player.x - player.facing * 40;
+    const dx = targetX - companion.x;
+    const speedCap = 4.0;
+    const step = Math.max(-speedCap, Math.min(speedCap, dx * 0.12)) * dt;
+    companion.x += step;
+    companion.y = player.y; // ride the same platform
+    if (Math.abs(step) > 0.4) companion.walkPhase += Math.abs(step) * 0.06;
+    companion.facing = dx > 0 ? 1 : (dx < 0 ? -1 : companion.facing);
+    companion.onGround = player.onGround;
+  }
 
   // batarang / batigarra throw (the batigarra's trigger doubles as the rope
   // reel while swinging, so it never fires mid-swing)
@@ -4727,7 +4820,56 @@ function drawBirds(t) {
   }
 }
 
+function drawCompanion(t) {
+  if (!companion) return;
+  const cx = companion.x - camera.x;
+  const cy = companion.y - camera.y;
+  const bob = companion.onGround ? Math.sin(companion.walkPhase) * 1.5 : 0;
+  if (companion.isRobin) {
+    // trailing Robin — his intro sprite, un-tied
+    const flipX = companion.facing < 0;
+    ctx.save();
+    if (flipX) { ctx.translate(cx + 12, cy - 4); ctx.scale(-1, 1); ctx.translate(-12, 0); }
+    else { ctx.translate(cx - 12, cy - 4); }
+    drawRobinSprite(0, bob, 0.82, false, 0);
+    ctx.restore();
+  } else {
+    // trailing Batman — a small silhouette so the sprite reads as "the
+    // one who's not in your hands right now"
+    ctx.fillStyle = '#131722';
+    ctx.fillRect(cx - 1, cy + 4, 22, 26);
+    ctx.fillStyle = '#f0d6b0';
+    ctx.fillRect(cx + 3, cy + 6, 14, 6);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(cx + 5, cy + 18, 12, 3);
+  }
+  // marker so it's clear which one is idle
+  ctx.fillStyle = 'rgba(255,209,102,0.8)';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(companion.isRobin ? 'R' : 'B', cx + 10, cy - 4);
+  ctx.textAlign = 'left';
+}
+
+function drawPlayerRobin(t) {
+  if (Date.now() < invulnUntil && Math.floor(Date.now() / 100) % 2 === 0) return;
+  const px = player.x - camera.x;
+  const py = player.y - camera.y;
+  const flipX = player.facing < 0;
+  // somersault rotation for Robin's double jump
+  const somer = player.somersaultUntil && performance.now() < player.somersaultUntil
+    ? (performance.now() - (player.somersaultUntil - 400)) / 400 : 0;
+  ctx.save();
+  ctx.translate(px + player.w / 2, py + player.h / 2);
+  if (somer > 0) ctx.rotate(somer * Math.PI * 2);
+  if (flipX) ctx.scale(-1, 1);
+  ctx.translate(-12, -player.h / 2);
+  drawRobinSprite(0, 0, player.h / 55, false, 0);
+  ctx.restore();
+}
+
 function drawPlayer() {
+  if (activeChar === 'robin') { drawPlayerRobin(performance.now()); return; }
   if (Date.now() < invulnUntil && Math.floor(Date.now() / 100) % 2 === 0) return;
   const px = player.x - camera.x;
   const w = player.w, h = player.h;
@@ -6421,6 +6563,7 @@ function render(t) {
   drawTwoFace(t);
   drawShockwaves();
   drawImpactEffects(t);
+  drawCompanion(t);
   drawPlayer();
   if (level.frozen) drawSnowfall(t);
   drawHeroMessage();
