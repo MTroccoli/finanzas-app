@@ -127,6 +127,26 @@ bindButton('btn-shoot', () => { keys.shoot = true; requestShoot(); }, () => keys
 bindButton('btn-up', () => keys.up = true, () => keys.up = false);
 bindButton('btn-down', () => keys.down = true, () => keys.down = false);
 
+// Warp back to the Batcave from any Act 3 level. Visible only from
+// Act 3 onward; wired to loadLevel(CUEVA).
+const caveBtnEl = document.getElementById('btn-cave');
+if (caveBtnEl) {
+  caveBtnEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (state !== 'playing') return;
+    const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
+    if (caveIdx >= 0) {
+      loadLevel(caveIdx);
+      state = 'playing';
+    }
+  });
+}
+function updateCaveButtonVisibility() {
+  if (!caveBtnEl) return;
+  const show = level && level.name && level.name.startsWith('3-');
+  caveBtnEl.style.display = show ? 'block' : 'none';
+}
+
 // Mobile browsers (iOS Safari especially) ignore user-scalable=no and can
 // pinch- or double-tap-zoom the page mid-game, leaving it stuck zoomed in
 // and unplayable. Block the gesture events and the double-tap heuristic.
@@ -623,7 +643,7 @@ function loadLevel(idx) {
     cv.act2Return = true;
     cv.alfred = {
       x: cv.computerX - 220,
-      y: cv.plateauY - 42,
+      y: cv.plateauY - 66, // shoes rest exactly on the plateau top
       triggered: false,
       dialogPage: 0,
     };
@@ -633,11 +653,9 @@ function loadLevel(idx) {
       facing: 1,
       walkPhase: 0,
     };
+    // no wall TV — Freeze's news feed shows up on the batcomputer
+    // itself when Batman opens the expediente
     cv.tvOn = false;
-    cv.tvX = cv.computerX - 350;
-    cv.tvY = cv.plateauY - 130;
-    cv.tvW = 140;
-    cv.tvH = 90;
   }
   updateWeaponButton(); // keep the gadget's controls visible across levels
   snapCameraToPlayer();
@@ -662,6 +680,7 @@ function loadLevel(idx) {
   }
   // remember the furthest level this player has reached, for "Continuar"
   if (playerName) saveProgress(playerName, idx);
+  updateCaveButtonVisibility();
 }
 
 function startGame() {
@@ -3213,87 +3232,6 @@ function drawCaveProps(t) {
   const cv = level.cave;
   const cy = (wy) => wy - camera.y;
 
-  // Act 2 return: wall-mounted TV. On until Alfred delivers his line,
-  // then it flips to the frozen-Gotham news feed for the rest of the
-  // Batcave visit. Drawn behind the trophies so nothing feels layered
-  // in front of it.
-  if (cv.act2Return && cv.tvX != null) {
-    const tx = cv.tvX - camera.x;
-    const ty = cv.tvY - camera.y;
-    const w = cv.tvW, h = cv.tvH;
-    // wall bracket
-    ctx.fillStyle = '#2a2f3a';
-    ctx.fillRect(tx - 4, ty - 4, w + 8, h + 24);
-    ctx.fillStyle = '#101623';
-    ctx.fillRect(tx, ty, w, h);
-    if (!cv.tvOn) {
-      // static — dead grey with noise before Alfred's line
-      ctx.fillStyle = '#2a2f3a';
-      ctx.fillRect(tx + 3, ty + 3, w - 6, h - 6);
-      for (let i = 0; i < 30; i++) {
-        const sx = tx + 3 + hash01(i + Math.floor(t / 90)) * (w - 6);
-        const sy = ty + 3 + hash01(i * 3 + Math.floor(t / 90)) * (h - 6);
-        ctx.fillStyle = `rgba(255,255,255,${0.2 + 0.5 * hash01(i * 7)})`;
-        ctx.fillRect(sx, sy, 2, 2);
-      }
-    } else {
-      // frozen Gotham news feed
-      const sg = ctx.createLinearGradient(0, ty, 0, ty + h);
-      sg.addColorStop(0, '#0d1830');
-      sg.addColorStop(0.6, '#264a6a');
-      sg.addColorStop(1, '#7fb5c8');
-      ctx.fillStyle = sg;
-      ctx.fillRect(tx + 3, ty + 3, w - 6, h - 6);
-      // snowy skyline
-      const base = ty + h - 22;
-      for (let i = 0; i < 6; i++) {
-        const bx = tx + 5 + i * ((w - 10) / 6);
-        const bw = ((w - 10) / 6) - 3;
-        const bh = 22 + hash01(i * 2.3) * 30;
-        ctx.fillStyle = '#0f1728';
-        ctx.fillRect(bx, base - bh, bw, bh);
-        ctx.fillStyle = '#f0f4ff';
-        ctx.fillRect(bx - 1, base - bh - 2, bw + 2, 3);
-      }
-      // frozen ground
-      ctx.fillStyle = '#c5dcea';
-      ctx.fillRect(tx + 3, base, w - 6, 6);
-      // falling snow
-      for (let i = 0; i < 14; i++) {
-        const fx = tx + 3 + ((hash01(i * 11.3) * (w - 6) + t * 0.03) % (w - 6));
-        const fy = ty + 3 + ((hash01(i * 4.7) * (h - 6) + t * 0.05) % (h - 6));
-        ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.4 * hash01(i * 3.9)})`;
-        ctx.fillRect(fx, fy, 1.5, 1.5);
-      }
-      // red crawler, clipped to its bar
-      const barY = ty + h - 12;
-      ctx.fillStyle = '#c0392b';
-      ctx.fillRect(tx + 3, barY, w - 6, 10);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(tx + 3, barY, w - 6, 10);
-      ctx.clip();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 8px monospace';
-      ctx.textAlign = 'left';
-      const crawl = 'GOTHAM CONGELADA — Mr. FREEZE avanza — -40°C — ';
-      const gw = 5.5;
-      const cyc = crawl.length * gw;
-      const off = (t / 40) % cyc;
-      ctx.fillText(crawl + crawl, tx + 5 - off, barY + 8);
-      ctx.restore();
-      // GCN bug
-      ctx.fillStyle = '#f6d743';
-      ctx.font = 'bold 7px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText('GCN', tx + w - 5, ty + 12);
-      ctx.textAlign = 'left';
-    }
-    // power light
-    ctx.fillStyle = cv.tvOn ? '#3adf6a' : '#4a1616';
-    ctx.beginPath(); ctx.arc(tx + w - 5, ty + h + 8, 2.4, 0, Math.PI * 2); ctx.fill();
-  }
-
   // Alfred waits between the entrance and the batcomputer with the news
   if (cv.act2Return && cv.alfred) {
     const ax = cv.alfred.x - camera.x - 12;
@@ -3309,12 +3247,11 @@ function drawCaveProps(t) {
     }
   }
 
-  // Robin follows Batman around
-  if (cv.companion) {
-    const rx = cv.companion.x - camera.x;
-    const ry = cv.companion.y - camera.y;
-    const bob = Math.sin(cv.companion.walkPhase) * 1.5;
-    drawRobinSprite(rx - 12, ry - 24 + bob, 0.7, false, 0);
+  // Robin follows Batman around — the actual sprite draw is a few
+  // lines further down, after drawCaveComputer, so he doesn't hide
+  // behind the Batcomputer as he walks by.
+  if (false && cv.companion) {
+    /* moved below */
   }
 
   // entrance arch at the far left, on the ground
@@ -3369,6 +3306,38 @@ function drawCaveProps(t) {
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(cv.weaponChosen ? '▲ SALTÁ: cambiar arma' : '▲ SALTÁ: Batcomputadora', promptX, promptY);
+  }
+
+  // Robin walks in beside Batman — drawn AFTER the batcomputer so he
+  // never disappears behind it. Scaled to Batman's height so he never
+  // looks like he's levitating higher.
+  if (cv.act2Return && cv.companion) {
+    const rx = cv.companion.x - camera.x;
+    const ry = cv.companion.y - camera.y;
+    const s = player.h / 55;
+    const bob = Math.sin(cv.companion.walkPhase) * 1.5;
+    const wp = cv.companion.walkPhase;
+    const strideL = Math.sin(wp) * 3;
+    const strideR = Math.sin(wp + Math.PI) * 3;
+    const liftL = Math.max(0, Math.sin(wp)) * 2;
+    const liftR = Math.max(0, Math.sin(wp + Math.PI)) * 2;
+    ctx.save();
+    if (cv.companion.facing < 0) {
+      ctx.translate(rx + 12, ry - bob);
+      ctx.scale(-1, 1);
+      ctx.translate(-12, 0);
+    } else {
+      ctx.translate(rx - 12, ry - bob);
+    }
+    drawRobinSprite(0, 0, s, false, 0);
+    // walk-cycle legs overlay so his feet visibly move
+    ctx.fillStyle = '#1e8449';
+    ctx.fillRect(6 * s + strideL, (42 - liftL) * s, 6 * s, 12 * s);
+    ctx.fillRect(14 * s + strideR, (42 - liftR) * s, 6 * s, 12 * s);
+    ctx.fillStyle = '#146034';
+    ctx.fillRect(5 * s + strideL, (52 - liftL) * s, 8 * s, 4 * s);
+    ctx.fillRect(13 * s + strideR, (52 - liftR) * s, 8 * s, 4 * s);
+    ctx.restore();
   }
 
   // exit door, hard right on the plateau
@@ -3579,14 +3548,88 @@ function drawExpedienteScreen(now) {
   ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
   ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: TWO-FACE', x + 18, y + 25);
+  const title = postTwoFaceReturn
+    ? 'BATCOMPUTADORA — NOTICIAS EN VIVO — GCN'
+    : 'BATCOMPUTADORA — EXPEDIENTE: TWO-FACE';
+  ctx.fillText(title, x + 18, y + 25);
 
-  ctx.save();
-  ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
-  drawTwoFacePortrait(ctx);
-  ctx.restore();
+  if (postTwoFaceReturn) {
+    // Frozen Gotham news feed rendered right on the Batcomputer instead
+    // of on a wall TV — sized the same as the Two-Face portrait area so
+    // the info column on the right never overlaps it
+    const sx = x + 30, sy = y + 54, sw = 130, sh = 140;
+    const sg = ctx.createLinearGradient(0, sy, 0, sy + sh);
+    sg.addColorStop(0, '#0d1830');
+    sg.addColorStop(0.6, '#264a6a');
+    sg.addColorStop(1, '#7fb5c8');
+    ctx.fillStyle = sg;
+    ctx.fillRect(sx, sy, sw, sh);
+    // skyline
+    const base = sy + sh - 28;
+    for (let i = 0; i < 5; i++) {
+      const bx = sx + 4 + i * ((sw - 8) / 5);
+      const bw = ((sw - 8) / 5) - 2;
+      const bh = 22 + hash01(i * 2.3) * 44;
+      ctx.fillStyle = '#0f1728';
+      ctx.fillRect(bx, base - bh, bw, bh);
+      ctx.fillStyle = '#f0f4ff';
+      ctx.fillRect(bx - 1, base - bh - 2, bw + 2, 3);
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(180,220,240,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(bx + bw - 4, base - bh);
+        ctx.lineTo(bx + bw - 2, base - bh + 10);
+        ctx.lineTo(bx + bw + 1, base - bh);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    // frozen ground
+    ctx.fillStyle = '#c5dcea';
+    ctx.fillRect(sx, base, sw, sy + sh - base - 14);
+    // falling snow
+    for (let i = 0; i < 24; i++) {
+      const fx = sx + ((hash01(i * 11.3) * sw + now * 0.03) % sw);
+      const fy = sy + ((hash01(i * 4.7) * sh + now * 0.05) % sh);
+      ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.4 * hash01(i * 3.9)})`;
+      ctx.fillRect(fx, fy, 2, 2);
+    }
+    // red crawler, clipped to its bar
+    const barY = sy + sh - 14;
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(sx, barY, sw, 14);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx, barY, sw, 14); ctx.clip();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    const crawl = 'GOTHAM CONGELADA — Mr. FREEZE avanza — -40°C — ';
+    const gw = 5, cyc = crawl.length * gw;
+    const off = (now / 40) % cyc;
+    ctx.fillText(crawl + crawl, sx + 3 - off, barY + 10);
+    ctx.restore();
+    // GCN LIVE bug
+    ctx.fillStyle = '#f6d743';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('GCN LIVE', sx + sw - 4, sy + 12);
+    ctx.fillStyle = Math.sin(now / 300) > 0 ? '#ff5e5e' : '#4a1616';
+    ctx.beginPath(); ctx.arc(sx + sw - 3, sy + 6, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.textAlign = 'left';
+  } else {
+    ctx.save();
+    ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
+    drawTwoFacePortrait(ctx);
+    ctx.restore();
+  }
 
-  const lines = [
+  const lines = postTwoFaceReturn ? [
+    ['> AMENAZA: Mr. FREEZE — VICTOR FRIES', '#bfe3ff'],
+    ['> ALIAS: EL DR. HIELO — TEMP: -40°C', '#bfe3ff'],
+    ['> M.O.: CAÑÓN CRIOGÉNICO SOBRE GOTHAM', '#ff5e5e'],
+    ['> ZONAS CONGELADAS: CENTRO Y DIQUES', '#bfe3ff'],
+    ['> COMPAÑERO: ROBIN — DÚO OPERATIVO', '#ffd166'],
+    ['► RUTA: BATICUEVA → GOTHAM · ACTO 3', '#29d985'],
+  ] : [
     ['> IDENTIDAD: HARVEY DENT, EX-FISCAL', '#bfe3ff'],
     ['> ALIAS: TWO-FACE — CICATRIZ DE ÁCIDO', '#bfe3ff'],
     ['> M.O.: DECIDE CADA CRIMEN CON UNA MONEDA', '#ff5e5e'],
@@ -3632,8 +3675,8 @@ function drawChoiceScreen(now) {
   const cards = postTwoFaceReturn
     ? [
         currentGadget === 'batarang'
-          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['El arma no elegida', 'Herramienta de movilidad', 'Control total del balanceo'] }
-          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['El arma no elegida', 'Arma arrojadiza', 'Derriba enemigos a distancia'] },
+          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] }
+          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
         { x: 424, title: '2. ARMADURA', c: '#c95a3a', lines: ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'] },
       ]
     : [
@@ -4824,27 +4867,40 @@ function drawCompanion(t) {
   if (!companion) return;
   const cx = companion.x - camera.x;
   const cy = companion.y - camera.y;
+  const s = player.h / 55; // Robin scaled to Batman's height, so no levitating
   const bob = companion.onGround ? Math.sin(companion.walkPhase) * 1.5 : 0;
   if (companion.isRobin) {
-    // trailing Robin — his intro sprite, un-tied
+    // trailing Robin — his intro sprite scaled to match Batman + walk-cycle
+    // leg overlay so his feet visibly move as he catches up
     const flipX = companion.facing < 0;
     ctx.save();
-    if (flipX) { ctx.translate(cx + 12, cy - 4); ctx.scale(-1, 1); ctx.translate(-12, 0); }
-    else { ctx.translate(cx - 12, cy - 4); }
-    drawRobinSprite(0, bob, 0.82, false, 0);
+    if (flipX) { ctx.translate(cx + 12, cy - bob); ctx.scale(-1, 1); ctx.translate(-12, 0); }
+    else { ctx.translate(cx - 12, cy - bob); }
+    drawRobinSprite(0, 0, s, false, 0);
+    const wp = companion.walkPhase;
+    const strideL = Math.sin(wp) * 3;
+    const strideR = Math.sin(wp + Math.PI) * 3;
+    const liftL = Math.max(0, Math.sin(wp)) * 2;
+    const liftR = Math.max(0, Math.sin(wp + Math.PI)) * 2;
+    ctx.fillStyle = '#1e8449';
+    ctx.fillRect(6 * s + strideL, (42 - liftL) * s, 6 * s, 12 * s);
+    ctx.fillRect(14 * s + strideR, (42 - liftR) * s, 6 * s, 12 * s);
+    ctx.fillStyle = '#146034';
+    ctx.fillRect(5 * s + strideL, (52 - liftL) * s, 8 * s, 4 * s);
+    ctx.fillRect(13 * s + strideR, (52 - liftR) * s, 8 * s, 4 * s);
     ctx.restore();
   } else {
-    // trailing Batman — a small silhouette so the sprite reads as "the
-    // one who's not in your hands right now"
+    // trailing Batman — a small silhouette matching Batman's height
+    const bh = player.h;
     ctx.fillStyle = '#131722';
-    ctx.fillRect(cx - 1, cy + 4, 22, 26);
+    ctx.fillRect(cx - 1, cy + 4, 22, bh - 4);
     ctx.fillStyle = '#f0d6b0';
     ctx.fillRect(cx + 3, cy + 6, 14, 6);
     ctx.fillStyle = '#ffd700';
-    ctx.fillRect(cx + 5, cy + 18, 12, 3);
+    ctx.fillRect(cx + 5, cy + bh * 0.5, 12, 3);
   }
   // marker so it's clear which one is idle
-  ctx.fillStyle = 'rgba(255,209,102,0.8)';
+  ctx.fillStyle = 'rgba(255,209,102,0.85)';
   ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   ctx.fillText(companion.isRobin ? 'R' : 'B', cx + 10, cy - 4);

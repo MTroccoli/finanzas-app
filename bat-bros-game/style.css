@@ -44,6 +44,27 @@ html, body {
   font-weight: bold;
 }
 
+.cave-btn {
+  position: absolute;
+  top: 46px;
+  left: 8px;
+  background: rgba(20, 24, 40, 0.9);
+  color: #ffd166;
+  border: 2px solid #ffd166;
+  padding: 6px 10px;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  z-index: 10;
+  letter-spacing: 0.05em;
+}
+.cave-btn:hover, .cave-btn:active {
+  background: #ffd166;
+  color: #111528;
+}
+
 canvas {
   display: block;
   width: 100%;
