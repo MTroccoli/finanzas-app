@@ -410,23 +410,24 @@ LEVEL_SPECS.push({
   width: 84, height: 26, groundY: 24,
   pits: [[26, 28], [58, 61]],
   platforms: [
-    // stepped rooftop 1 — climbable staircase (2-tile jumps)
-    { x: 6, y: 22, w: 2 },
+    // stepped rooftop 1 — climbable staircase (raised the row-22
+    // steps to row 21 so big Batman can walk under them without
+    // his head clipping the platform).
+    { x: 6, y: 21, w: 2 },
     { x: 8, y: 20, w: 4 },
-    { x: 12, y: 22, w: 2 },
+    { x: 12, y: 21, w: 2 },
     // mid-height rooftop past the first pit (reached by swinging)
     { x: 36, y: 21, w: 5 },
     // stepped roof 2 — small pyramid Batman can hop up
-    { x: 42, y: 22, w: 2 },
+    { x: 42, y: 21, w: 2 },
     { x: 44, y: 20, w: 3 },
-    { x: 47, y: 22, w: 2 },
+    { x: 47, y: 21, w: 2 },
     // ledge past the second pit
     { x: 64, y: 21, w: 3 },
-    // final flat rooftop (was a gable-house stair; the diagonal
-    // roof was dropped for a cleaner endgame silhouette)
-    { x: 72, y: 22, w: 2 },
+    // final flat rooftop
+    { x: 72, y: 21, w: 2 },
     { x: 74, y: 20, w: 5 },
-    { x: 79, y: 22, w: 2 },
+    { x: 79, y: 21, w: 2 },
   ],
   // Only one grapple-required wall (Act-1 vocabulary). Everything else
   // is stompable stairs.
@@ -498,46 +499,49 @@ LEVEL_SPECS.push({
     { x: 74, y: 24, w: 3 },
   ],
   // Skyline: two clusters of buildings, each stepped up to a spire.
-  // First cluster peaks at row 12 (tower spike), then steps back
-  // down; second cluster peaks at row 8 (the tallest tower).
+  // Cluster 1 peaks at row 14 (a smaller spike), cluster 2 peaks at
+  // row 10 (the tallest tower, lowered from the old row 8 so Robin's
+  // double-jump chain can actually reach it).
   walls: [
-    // Cluster 1 — climbs 24 → 20 → 12 → 18
+    // Cluster 1 — climbs 24 → 20 → 14 → 18
     { x: 22, w: 3, topRow: 24 },
     { x: 25, w: 3, topRow: 20 },
-    { x: 28, w: 4, topRow: 12 },
+    { x: 28, w: 4, topRow: 14 },
     { x: 32, w: 3, topRow: 18 },
-    // Cluster 2 — climbs 22 → 16 → 8 → 14 → 20
+    // Cluster 2 — packed staircase 22 → 16 → 10 → 16 → 22, and a
+    // terminal building at the end
     { x: 46, w: 3, topRow: 22 },
     { x: 49, w: 3, topRow: 16 },
-    { x: 63, w: 4, topRow: 8 },
-    { x: 67, w: 3, topRow: 14 },
-    { x: 70, w: 3, topRow: 20 },
+    { x: 54, w: 4, topRow: 10 },   // TALLEST spire (was x=63, row 8)
+    { x: 58, w: 3, topRow: 16 },
+    { x: 62, w: 3, topRow: 22 },
     // Terminal building
     { x: 82, w: 4, topRow: 22 },
   ],
-  ladders: [
-    // Robin can climb the tallest spire without a grapple
-    { x: 28, topRow: 12, baseRow: 28 },
-    { x: 63, topRow: 8, baseRow: 28 },
-  ],
+  // Ladders removed — they used to sit INSIDE their wall columns,
+  // which the wall's solid tiles blocked, so neither character
+  // could actually climb them. Robin now double-jumps up the
+  // packed cluster-2 staircase; Batman uses the grapple below.
+  ladders: [],
   houses: [],
-  // Grapples to the peaks — the tall spires can't be reached
-  // otherwise; each step in the skyline gets its swing anchor.
+  // Grapples to the peaks — each cluster spire gets one so Batman
+  // (batigarra) can chain up. The tallest anchor sits over the
+  // cluster-2 spire and is reachable from wall x=49 (row 16).
   swingPoints: [
     [24, 22],   // helps clear the pit and reach the first cluster
-    [30, 10],   // spire 1 top
+    [30, 12],   // spire 1 top (row 14 spire, anchor 2 rows above)
     [46, 20],   // between clusters
-    [65, 6],    // spire 2 (tallest) top
+    [56, 8],    // TALLEST spire grapple — reachable from wall x=49
     [78, 18],   // final descent
   ],
   coins: [
     [4, 27], [6, 27], [14, 27],
     [9, 24], [10, 24],
-    [23, 23], [26, 19], [29, 11], [30, 11],
+    [23, 23], [26, 19], [29, 13], [30, 13],
     [40, 26], [42, 19], [43, 19],
     [47, 21], [50, 15],
-    [63, 7], [64, 7], [65, 7],
-    [68, 13], [70, 19],
+    [54, 9], [55, 9], [56, 9],   // sitting on the tallest spire
+    [58, 15], [62, 21],
     [75, 23], [82, 21],
     [90, 27], [92, 27],
   ],
@@ -545,25 +549,25 @@ LEVEL_SPECS.push({
     // Opener pushed away from spawn (tile 2) per the general rule
     { x: 12, y: 28, range: [10, 14], frozen: true },
     { x: 26, y: 20, range: [25, 27], helmet: true, frozen: true },
-    { x: 29, y: 12, range: [28, 31], helmet: true, frozen: true },
+    { x: 29, y: 14, range: [28, 31], helmet: true, frozen: true },
     { x: 40, y: 28, range: [38, 44], frozen: true },
     { x: 50, y: 16, range: [49, 51], frozen: true },
-    { x: 64, y: 8, range: [63, 66], helmet: true, frozen: true },
-    { x: 70, y: 20, range: [70, 72], frozen: true },
+    { x: 55, y: 10, range: [54, 57], helmet: true, frozen: true },
+    { x: 58, y: 16, range: [58, 60], frozen: true },
     { x: 84, y: 22, range: [82, 85], frozen: true },
     { x: 90, y: 28, range: [88, 94], frozen: true },
   ],
   snowCannons: [
     { x: 36, interval: 2600 },
-    { x: 78, interval: 2400 },
+    { x: 68, interval: 2400 },
   ],
   birds: [
     { x: 36, y: 14, range: [30, 44], frozen: true },
-    { x: 74, y: 12, range: [66, 80], frozen: true },
+    { x: 72, y: 18, range: [64, 80], frozen: true },
   ],
   // Bat power-up on the tallest spire — reaching it is the
   // checkpoint for the second half of the skyline.
-  bats: [[65, 7]],
+  bats: [[55, 9]],
   spawn: { x: 2, y: 26 },
 });
 
@@ -580,10 +584,12 @@ LEVEL_SPECS.push({
   // Water gaps between pier sections — the boats sail these.
   pits: [[30, 46], [72, 90]],
   platforms: [
-    // small crate stack on the opening pier
-    { x: 10, y: 17, w: 2 },
-    // pier landing between the two water gaps
-    { x: 62, y: 17, w: 3 },
+    // Small crate stack on the opening pier — raised to row 16 so
+    // big Batman can walk under it (row 17 only left 2 tiles of
+    // clearance with h=40, and thugs/Batman clipped the ceiling).
+    { x: 10, y: 16, w: 2 },
+    // Pier landing between the two water gaps — same treatment.
+    { x: 62, y: 16, w: 3 },
   ],
   // Warehouses along the pier: short at the start, taller at the
   // container yard mid-level, and one last shed at the end.
@@ -630,7 +636,7 @@ LEVEL_SPECS.push({
     [17, 14], [24, 12], [25, 12],
     [37, 18], [40, 18],   // sit on boat #1
     [51, 13], [52, 13],
-    [63, 16],
+    [63, 15],
     [79, 18], [82, 18],   // sit on boat #2
     [97, 11], [100, 18], [104, 18],
   ],

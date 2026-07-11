@@ -87,6 +87,32 @@ window.addEventListener('keydown', e => {
   // Batcave UI screens are driven straight from keydown so a quick tap is
   // never lost to frame timing (touch buttons go through handleCaveUIInput).
   const confirmCode = ['ArrowUp', 'KeyW', 'Space', 'KeyX', 'Enter'].includes(e.code);
+  // ESC steps BACK one screen in the batcomputer flow. Sequence is:
+  //   playing → computer → freezeExpediente → choice
+  // and ESC walks the reverse path back to `playing` so the player
+  // doesn't have to click through the whole chain to close.
+  if (e.code === 'Escape') {
+    if (state === 'computer') { state = 'playing'; e.preventDefault(); return; }
+    if (state === 'freezeExpediente') { state = 'computer'; e.preventDefault(); return; }
+    if (state === 'choice') {
+      const cv = level.cave;
+      if ((cv.pickStep || 'slot') === 'accessory') {
+        cv.pickStep = 'slot';
+        cv.editingKind = null;
+      } else {
+        state = postTwoFaceReturn ? 'freezeExpediente' : 'computer';
+      }
+      e.preventDefault();
+      return;
+    }
+    if (state === 'levelselect') {
+      const cv = level.cave;
+      if ((cv.selStep || 'act') === 'level') { cv.selStep = 'act'; cv.selLevel = 0; }
+      else { state = 'playing'; }
+      e.preventDefault();
+      return;
+    }
+  }
   if (state === 'computer') {
     if (confirmCode) {
       // Post-2-4 fresh visit: news first, then expediente, then choice.
@@ -1086,28 +1112,15 @@ async function submitName() {
   btnNameOk.disabled = true;
   btnNameOk.textContent = 'CARGANDO…';
   [savedMaxLevel, gameOverCount, savedGadget] = await Promise.all([loadProgress(name), loadGameOvers(name), loadGadget(name)]);
-  // Dev shortcut: the tester account "Troco" always starts Continue on
-  // level 3-1 so the full Act-3 loop is one click away. We FORCE
-  // savedMaxLevel to 3-1 (not Math.max) even if Supabase already stored
-  // a later level, and push the reset back to Supabase + localStorage
-  // so the next load lands on 3-1 too.
+  // Dev shortcut: the tester account "Troco" starts at the post-2-4
+  // Batcave hub so the whole Act 3 loop is one click into the Batcomputer
+  // + Baticueva flow away. This is a FLOOR (Math.max), not a hard reset:
+  // any progress past the Batcave is preserved across sessions, and
+  // Supabase is NOT overwritten so the remote row keeps the real
+  // furthest-level reached.
   if (name.trim().toLowerCase() === 'troco') {
-    const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
-    if (idx31 >= 0) {
-      savedMaxLevel = idx31;
-      try { localStorage.setItem(localKey(name), String(idx31)); } catch (e) {}
-      try {
-        fetch(`${SUPA_PLAYERS}?on_conflict=name`, {
-          method: 'POST',
-          headers: {
-            apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
-            'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates',
-          },
-          body: JSON.stringify({ name: name.trim(), last_level: idx31, updated_at: new Date().toISOString() }),
-        }).catch(() => {});
-      } catch (e) {}
-    }
+    const cavaIdx = LEVEL_SPECS.findIndex(s => s.cave);
+    if (cavaIdx >= 0) savedMaxLevel = Math.max(savedMaxLevel, cavaIdx);
     savedGadget = savedGadget || 'batarang';
     try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
   }
@@ -1172,9 +1185,64 @@ overlayBtn.addEventListener('click', () => {
   if (state === 'gameover' || state === 'win') startGame();
 });
 
-// any tap/keypress skips the intro scene
-canvas.addEventListener('pointerdown', () => {
-  if (state === 'cutscene') startGame();
+// Batcomputer ESC pill — canvas-space rectangle drawn on each screen
+// so a mobile player can tap "back" without a keyboard. The same box
+// is also the tap target picked up by the pointerdown handler below.
+const ESC_PILL = { x: 20, y: 12, w: 74, h: 26 };
+function drawEscPill(now) {
+  const b = ESC_PILL;
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,25,45,0.85)';
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('◄ ESC', b.x + b.w / 2, b.y + 18);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+function escBackFromComputer() {
+  if (state === 'computer') { state = 'playing'; return; }
+  if (state === 'freezeExpediente') { state = 'computer'; return; }
+  if (state === 'choice') {
+    const cv = level.cave;
+    if ((cv.pickStep || 'slot') === 'accessory') {
+      cv.pickStep = 'slot';
+      cv.editingKind = null;
+    } else {
+      state = postTwoFaceReturn ? 'freezeExpediente' : 'computer';
+    }
+    return;
+  }
+  if (state === 'levelselect') {
+    const cv = level.cave;
+    if ((cv.selStep || 'act') === 'level') { cv.selStep = 'act'; cv.selLevel = 0; }
+    else { state = 'playing'; }
+  }
+}
+
+// any tap/keypress skips the intro scene; taps also drive the ESC
+// pill on batcomputer screens (see drawEscPill above).
+canvas.addEventListener('pointerdown', (e) => {
+  if (state === 'cutscene') { startGame(); return; }
+  if (state === 'computer' || state === 'freezeExpediente' ||
+      state === 'choice' || state === 'levelselect') {
+    // Convert page coords to internal 800×480 canvas coords — the
+    // canvas can be scaled by CSS but the ESC pill lives in level
+    // space, so we scale the tap point back down.
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const cx = (e.clientX - rect.left) * scale;
+    const cy = (e.clientY - rect.top) * scale;
+    const b = ESC_PILL;
+    if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+      escBackFromComputer();
+      e.preventDefault();
+    }
+  }
 });
 
 // ---------------------------------------------------------------
@@ -8401,6 +8469,9 @@ function loop(now) {
     else if (state === 'freezeExpediente') drawFreezeExpedienteScreen(now);
     else if (state === 'choice') drawChoiceScreen(now);
     else drawLevelSelectScreen(now);
+    // ESC pill sits on top of every batcomputer screen so both keyboard
+    // (Escape key handler) and touch (canvas pointerdown) can back out.
+    drawEscPill(now);
     handleCaveUIInput(now);
   } else if (state === 'cutscene') {
     const ct = now - cutsceneStart;
