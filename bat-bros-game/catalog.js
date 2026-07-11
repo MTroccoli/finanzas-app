@@ -129,11 +129,14 @@ const TWOFACE_BULLET_SPEED = 3.4;
 // and the core overheats — the ice melts and Freeze drops, defeated.
 const FREEZE_VENT_INTERVAL = 3600;   // gap between valve-venting cycles
 const FREEZE_VENT_WINDOW = 3200;     // how long a valve stays exposed / jammable
-const FREEZE_BEAM_TELEGRAPH = 700;   // cold-gun charge-up before firing
-const FREEZE_BEAM_GAP = 420;         // between the balls of one cold-gun burst
 const FREEZE_HIT_FLASH_MS = 600;     // valve flash after a jam
 const FREEZE_MELT_MS = 2400;         // overload -> melt animation before the level completes
 const FREEZE_DEFAULT_VALVES = 3;
+// Freeze is ALWAYS firing his cold gun while the fight is on — a steady
+// aimed shot that speeds up as the core heats (valves get jammed).
+const FREEZE_SHOT_INTERVAL = 820;    // ms between cold-gun shots at 0 valves jammed
+const FREEZE_SHOT_INTERVAL_MIN = 360;// fastest cadence once the core is hot
+const FREEZE_MUZZLE_MS = 160;        // muzzle-flash duration per shot
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -383,7 +386,7 @@ function buildLevel(spec) {
         maxValves: valves.length,
         state: 'idle',               // idle | fight | overload | dead
         exposedIdx: -1, exposedUntil: 0, nextVentAt: 0,
-        beamUntil: 0, beamIdx: 0, nextBeamAt: 0,
+        beamIdx: 0, nextShotAt: 0, muzzleUntil: 0, gunAngle: -0.5,
         temp: 0, deadAt: 0, meltStart: 0,
       };
     })() : null,

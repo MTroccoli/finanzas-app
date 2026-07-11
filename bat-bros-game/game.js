@@ -2077,16 +2077,18 @@ function updateTwoFace(dt, now) {
 // ---------------------------------------------------------------
 function spawnFreezeColdGun(now) {
   const mf = level.mrfreeze;
-  const ox = mf.coreX, oy = mf.coreY - 6;
-  const sign = (player.x + player.w / 2) >= ox ? 1 : -1;
   const jammed = mf.valves.filter(v => v.jammed).length;
-  const speed = 5.5 + jammed * 0.9;               // angrier as the core heats up
-  const lean = [-0.5, 0, 0.5][mf.beamIdx % 3];    // 3-shot fan biased at Batman
+  const speed = 7 + jammed;                        // faster/flatter as the core heats up
+  const spread = [-0.13, 0, 0.13][mf.beamIdx % 3]; // tight 3-shot spread around the aim
+  const ang = (mf.gunAngle || -0.5) + spread;
+  const muzzle = 32;                               // spawn from the gun tip
+  const ox = mf.coreX + Math.cos(ang) * muzzle;
+  const oy = mf.coreY + Math.sin(ang) * muzzle;
   level.snowballs = level.snowballs || [];
   level.snowballs.push({
     x: ox - SNOWBALL_SIZE / 2, y: oy - SNOWBALL_SIZE / 2,
     w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
-    vx: sign * speed + lean * 2.2, vy: -3 + lean * 1.6,
+    vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
     rot: 0, alive: true, born: now,
   });
   mf.beamIdx++;
@@ -2110,27 +2112,30 @@ function updateMrFreeze(dt, now) {
     return;
   }
 
-  // open a valve to vent + charge the cold gun
+  // open a valve to vent (the reactor's only vulnerable window)
   if (mf.exposedIdx < 0 && now >= mf.nextVentAt) {
     const free = mf.valves.map((v, i) => i).filter(i => !mf.valves[i].jammed);
     if (free.length) {
       mf.exposedIdx = free[Math.floor(Math.random() * free.length)];
       mf.exposedUntil = now + FREEZE_VENT_WINDOW;
-      mf.beamUntil = now + FREEZE_VENT_WINDOW;
-      mf.nextBeamAt = now + FREEZE_BEAM_TELEGRAPH; // telegraph before the first shot
-      mf.beamIdx = 0;
     }
   }
   // valve re-seals if the window closes without a jam
   if (mf.exposedIdx >= 0 && now >= mf.exposedUntil) {
     mf.exposedIdx = -1;
     mf.nextVentAt = now + FREEZE_VENT_INTERVAL;
-    mf.beamUntil = 0;
   }
-  // cold-gun burst during the vent
-  if (mf.beamUntil > now && now >= mf.nextBeamAt) {
+
+  // Freeze is ACTIVE the whole fight: he tracks Batman and keeps firing his
+  // cold gun, faster and faster as the core heats up (valves get jammed).
+  const jammedNow = mf.valves.filter(v => v.jammed).length;
+  const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+  mf.gunAngle = Math.atan2(pcy - mf.coreY, pcx - mf.coreX);
+  if (!mf.nextShotAt) mf.nextShotAt = now + 600;
+  if (now >= mf.nextShotAt) {
     spawnFreezeColdGun(now);
-    mf.nextBeamAt = now + FREEZE_BEAM_GAP;
+    mf.muzzleUntil = now + FREEZE_MUZZLE_MS;
+    mf.nextShotAt = now + Math.max(FREEZE_SHOT_INTERVAL_MIN, FREEZE_SHOT_INTERVAL - jammedNow * 150);
   }
 
   // dive-stomp the exposed valve to jam it
@@ -2143,7 +2148,6 @@ function updateMrFreeze(dt, now) {
       v.jammed = true;
       v.hitUntil = now + FREEZE_HIT_FLASH_MS;
       mf.exposedIdx = -1;
-      mf.beamUntil = 0;
       player.vy = STOMP_BOUNCE;
       const jammed = mf.valves.filter(x => x.jammed).length;
       mf.temp = jammed / mf.maxValves;
@@ -5321,6 +5325,42 @@ function drawTiles() {
         continue;
       }
 
+      // Mr. Freeze arena: everything is encased in solid ice — glossy blue
+      // body, bright frosted tops with a slippery sheen, cracks and icicles,
+      // so the whole room reads as frozen (and it IS slippery: friction 0.93).
+      if (level.mrfreeze) {
+        const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
+        const ig = ctx.createLinearGradient(px, py, px, py + TILE);
+        ig.addColorStop(0, '#47708f'); ig.addColorStop(1, '#243f59');
+        ctx.fillStyle = ig; ctx.fillRect(px, py, TILE, TILE);
+        // icy facets
+        ctx.strokeStyle = 'rgba(180,220,255,0.14)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px + TILE * 0.5, py); ctx.lineTo(px + TILE * 0.5, py + TILE); ctx.stroke();
+        if (hash01(tx * 4.1 + ty * 2.7) > 0.58) {
+          ctx.strokeStyle = 'rgba(230,245,255,0.12)';
+          ctx.beginPath(); ctx.moveTo(px + 4, py + TILE * 0.28); ctx.lineTo(px + TILE * 0.62, py + TILE * 0.72); ctx.stroke();
+        }
+        if (exposedTop) {
+          ctx.fillStyle = '#e8f4ff'; ctx.fillRect(px, py, TILE, 5);
+          ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(px, py + 5, TILE, 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(px + 3, py + 8, TILE - 6, 2); // slippery sheen
+          ctx.fillStyle = '#eaf3ff';
+          ctx.beginPath();
+          ctx.moveTo(px - 1, py + 5);
+          ctx.quadraticCurveTo(px + TILE * 0.3, py - 3, px + TILE * 0.5, py + 2);
+          ctx.quadraticCurveTo(px + TILE * 0.7, py - 4, px + TILE + 1, py + 4);
+          ctx.lineTo(px + TILE + 1, py + 6); ctx.lineTo(px - 1, py + 6); ctx.closePath(); ctx.fill();
+          if (hash01(tx * 2.3 + ty) > 0.62) {
+            ctx.fillStyle = 'rgba(200,225,245,0.85)';
+            const ix = px + hash01(tx * 3.7) * (TILE - 6) + 3, il = 6 + hash01(tx * 5.1) * 12;
+            ctx.beginPath(); ctx.moveTo(ix - 2, py + TILE); ctx.lineTo(ix + 2, py + TILE); ctx.lineTo(ix, py + TILE + il); ctx.closePath(); ctx.fill();
+          }
+        }
+        ctx.strokeStyle = 'rgba(18,36,54,0.45)';
+        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+        continue;
+      }
+
       const topCol = level.cave ? '#4a5578' : '#565c6b';
       const bodyCol = level.cave ? '#1c2440' : '#282c36';
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
@@ -6889,6 +6929,30 @@ function drawMrFreeze(t) {
     ctx.fillRect(cx - 20, cy + meltT * 14, 40, 10);
   }
   ctx.restore();
+
+  // --- cold gun: Freeze's arm tracks Batman and fires (not while melting) ---
+  if (!melting) {
+    const ang = mf.gunAngle || -0.5;
+    const ax = cx + Math.cos(ang) * (coreR - 6), ay = cy + Math.sin(ang) * (coreR - 6);
+    const gx = cx + Math.cos(ang) * (coreR + 22), gy = cy + Math.sin(ang) * (coreR + 22);
+    // arm
+    ctx.strokeStyle = '#9fb8c8'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(gx, gy); ctx.stroke();
+    // gun body + emitter
+    ctx.save();
+    ctx.translate(gx, gy); ctx.rotate(ang);
+    ctx.fillStyle = '#3a5266'; ctx.fillRect(-6, -5, 18, 10);
+    ctx.fillStyle = '#8ff0ff'; ctx.fillRect(10, -3, 5, 6);        // emitter tip
+    ctx.restore();
+    ctx.lineCap = 'butt';
+    // muzzle flash: a cold burst cone right after a shot
+    if (now < mf.muzzleUntil) {
+      const fg = ctx.createRadialGradient(gx, gy, 1, gx, gy, 22);
+      fg.addColorStop(0, 'rgba(180,240,255,0.9)'); fg.addColorStop(1, 'rgba(180,240,255,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(gx + Math.cos(ang) * 8, gy + Math.sin(ang) * 8, 16, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   // frost crust on the chamber that cracks off while melting
   if (meltT < 0.7) {
     ctx.strokeStyle = `rgba(200,235,255,${0.5 - meltT * 0.5})`; ctx.lineWidth = 2;
@@ -6940,13 +7004,6 @@ function drawMrFreeze(t) {
       ctx.beginPath(); ctx.arc(vx, vy - v.h + 1, 3, 0, Math.PI * 2); ctx.fill();
     }
   });
-
-  // --- cold-gun muzzle flash while venting ---
-  if (mf.beamUntil > now) {
-    const mg = ctx.createRadialGradient(cx, cy, 2, cx, cy, 22);
-    mg.addColorStop(0, 'rgba(160,230,255,0.7)'); mg.addColorStop(1, 'rgba(160,230,255,0)');
-    ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(cx, cy - 6, 22, 0, Math.PI * 2); ctx.fill();
-  }
 
   // --- melt: steam gushes and the core cracks open ---
   if (melting) {
