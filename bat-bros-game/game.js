@@ -1219,15 +1219,30 @@ function rectHitsSolid(x, y, w, h) {
 // Correctly-placed patrols never touch a wall, so this only ever fires on a
 // range that would otherwise clip a building.
 function patrolWallBounce(e) {
-  if (!rectHitsSolid(e.x, e.y, e.w, e.h)) return;
-  if (e.vx > 0) {
-    const tx = Math.floor((e.x + e.w - 1) / TILE);
-    e.x = tx * TILE - e.w;
-    e.vx = -Math.abs(e.vx);
-  } else {
-    const tx = Math.floor(e.x / TILE);
-    e.x = (tx + 1) * TILE;
-    e.vx = Math.abs(e.vx);
+  // Solid tiles first — the classic wall bounce.
+  if (rectHitsSolid(e.x, e.y, e.w, e.h)) {
+    if (e.vx > 0) {
+      const tx = Math.floor((e.x + e.w - 1) / TILE);
+      e.x = tx * TILE - e.w;
+      e.vx = -Math.abs(e.vx);
+    } else {
+      const tx = Math.floor(e.x / TILE);
+      e.x = (tx + 1) * TILE;
+      e.vx = Math.abs(e.vx);
+    }
+    return;
+  }
+  // GENERAL RULE: snow cannons (Act 3) also block patrols. Thugs and
+  // birds should stop AT the cannon, not walk through it, so the
+  // cannon acts as an invisible wall for the AABB test.
+  const cannons = level.snowCannons || [];
+  for (const c of cannons) {
+    if (!c.alive) continue;
+    if (aabbOverlap(e, c)) {
+      if (e.vx > 0) { e.x = c.x - e.w; e.vx = -Math.abs(e.vx); }
+      else          { e.x = c.x + c.w; e.vx = Math.abs(e.vx); }
+      return;
+    }
   }
 }
 

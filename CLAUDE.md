@@ -146,6 +146,20 @@ doc.**
   normal `0.78 = FRICTION`). Batman keeps sliding but stays in
   control.
 
+### Level layout — GENERAL RULES
+- **Don't crowd the spawn**: no thug, bird or hazard within ~7 tiles
+  of the level's `spawn.x`. Players need a beat to orient before the
+  first fight. When trimming, the first thug range should start at
+  tile `spawn.x + 7` or later.
+- **Snow cannons block enemy patrols**: `patrolWallBounce` treats a
+  living `snowCannon` as an invisible wall (AABB overlap → reverse
+  vx). Thugs and birds should NOT walk / fly through cannons — they
+  turn around at the cannon face.
+- **Only necessary grapples**: keep swing points that are the ONLY
+  way to cross a pit / wall / gap. Decorative grapples over stepped
+  roofs or walls with ladders should be dropped so each anchor
+  carries meaning.
+
 ### Character sprite alignment
 - Robin (companion or active) is scaled by `player.h / 55` so his
   feet line up with Batman's exactly. NEVER draw him with a fixed

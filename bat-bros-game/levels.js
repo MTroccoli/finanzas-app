@@ -451,8 +451,10 @@ LEVEL_SPECS.push({
   // Trimmed enemy count — the level was too crowded. Kept the
   // key encounters: opener, mid-street, one rooftop helmet, one
   // guard before the second pit, one post-pit helmet, one end.
+  // First thug pushed away from the spawn (tile 2) per the general
+  // "don't crowd the start" rule — the opener now waits at tile 10+.
   thugs: [
-    { x: 4, y: 24, range: [3, 6], frozen: true },
+    { x: 12, y: 24, range: [10, 14], frozen: true },
     { x: 22, y: 24, range: [20, 25], frozen: true },
     { x: 38, y: 21, range: [36, 40], helmet: true, frozen: true },
     { x: 50, y: 24, range: [48, 55], helmet: true, frozen: true },
@@ -518,12 +520,13 @@ LEVEL_SPECS.push({
     { x: 32, topRow: 20, baseRow: 28 },
     { x: 34, topRow: 20, baseRow: 28 },
   ],
-  houses: [
-    { x: 88, w: 3, topRow: 18, baseRow: 21, style: 'brownstone' },
-  ],
-  // Grapple over the tall wall + one swing to make the twin-gable
-  // roof reachable from below.
-  swingPoints: [[33, 17], [46, 18], [66, 18]],
+  houses: [],
+  // Only the swing anchor before the big pit remains — the wall is
+  // climbable via ladders and the twin-gable roof is a stair
+  // Batman can already hop up. So [33,17] and [46,18] were dropped
+  // as decoration; [66,18] stays because the 5-tile pit at 72-76
+  // is impossible to jump.
+  swingPoints: [[66, 18]],
   coins: [
     [5, 27], [18, 27], [56, 27], [68, 27],
     [10, 23], [24, 22],
@@ -532,8 +535,12 @@ LEVEL_SPECS.push({
     [80, 24], [84, 22], [88, 20],
     [30, 19], [31, 19], [32, 19],
   ],
+  // Opener pushed away from the spawn (tile 2) per the general
+  // "don't crowd the start" rule — was range [3, 10]. The rooftop
+  // helmet + walker at x=89 sat on the demolished house, so both
+  // came out with it.
   thugs: [
-    { x: 6, y: 28, range: [3, 10], frozen: true },
+    { x: 12, y: 28, range: [10, 14], frozen: true },
     { x: 24, y: 23, range: [24, 27], helmet: true, frozen: true },
     { x: 26, y: 28, range: [22, 30], frozen: true },
     { x: 38, y: 28, range: [36, 42], frozen: true },
@@ -541,7 +548,6 @@ LEVEL_SPECS.push({
     { x: 56, y: 28, range: [54, 62], frozen: true },
     { x: 65, y: 28, range: [62, 71], frozen: true },
     { x: 80, y: 25, range: [80, 81], helmet: true, frozen: true },
-    { x: 89, y: 18, range: [88, 90], helmet: true, frozen: true },
     { x: 92, y: 28, range: [90, 95], frozen: true },
   ],
   snowCannons: [
