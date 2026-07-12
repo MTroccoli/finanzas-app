@@ -35,13 +35,18 @@ This workflow keeps the game in a constantly deployable state and maintains a cl
 here doesn't match the code, the code is wrong — fix the code, not the
 doc.**
 
-### Acts and lives
-- **Act 1** (levels `1-*`) — 3 starting lives. Set when loading `1-1`.
-- **Act 2** (levels `2-*`) — 4 starting lives. Set when loading `2-1`.
-- **Act 3** (levels `3-*`) — 5 starting lives. Set when loading `3-1`.
-- Lives never go DOWN at an act boundary — the bump is a floor
-  (`if (lives < target) lives = target`), so a player who hoarded
-  lives keeps them. Implemented in `loadLevel` via `actStart` map.
+### Acts and lives (GENERAL RULE)
+- **Act 1** (levels `1-*`) — 3 lives. **Act 2** (`2-*`) — 4. **Act 3+**
+  (`3-*`, `4-*`) — 5. `actFloor = { '1':3, '2':4, '3':5, '4':5 }`.
+- The value is a **floor**, applied whenever the ACT CHANGES — not only
+  on the act's first level. So it fires at an act boundary
+  (`2-4` → `3-1`) AND on a **Continue that lands mid-act** (e.g. jumping
+  straight to `3-4`), which is the case that used to break (a player
+  continuing at `3-4` got 3 lives instead of 5).
+- Never lowers lives and never refills within an act (same act = no
+  re-floor). Implemented in `loadLevel` via a `lastLoadedAct` guard +
+  `actFloor`; `startGame` resets `lastLoadedAct = null` so the first
+  level of any run (new game OR Continue) applies its floor.
 
 ### Power-up bats are checkpoints (GENERAL RULE, all acts)
 - Every bat power-up (`level.bats` entry) IS a checkpoint. Picking
@@ -176,10 +181,16 @@ phase's moveset is active.
      expediente (Mr. Freeze), NO news feed re-play.
 - `postTwoFaceReturn` is set by the rescue cutscene AND is auto-
   restored on Continue from `bitbros:act2beaten` in localStorage.
-- Batcave level-select carousel (accessed via the entrance door):
-  - Pre-Act 2 (`postTwoFaceReturn = false`): Act 1 levels only.
-  - Post-Act 2: Act 1 AND Act 2 levels.
-  - "SEGUIR" option always closes the menu and resumes the Batcave.
+- Batcave level-select carousel (accessed via the entrance door) —
+  **GENERAL RULE**: it always offers every level UP TO the furthest one
+  the player has reached, and no further. The cap is
+  `maxReachedIndex() = max(savedMaxLevel, lastPlayedLevel, levelIndex)`
+  (the high-water-mark index into `LEVEL_SPECS`).
+  - `levelSelectActs()`: an act appears once its FIRST level's index
+    `<= cap` (so Act 3 shows only after you've reached `3-1`).
+  - `levelSelectLevels(actId)`: lists that act's levels with index
+    `<= cap` (e.g. cap at `3-2` hides `3-3`/`3-4`).
+  - "SEGUIR" always closes the menu and resumes the Batcave.
 - The Batcomputer expediente content is the LORE of the max act
   reached:
   - Highest act reached is 1: **Two-Face** expediente (preview of
@@ -217,6 +228,17 @@ phase's moveset is active.
   living `snowCannon` as an invisible wall (AABB overlap → reverse
   vx). Thugs and birds should NOT walk / fly through cannons — they
   turn around at the cannon face.
+- **Snow cannons do NOT freeze on contact (GENERAL RULE)**: touching
+  the cannon body is harmless — it's scenery. ONLY its snowballs
+  freeze Batman (`player.frozenUntil`). Do not re-add an ice-trap on
+  the cannon itself.
+- **Every level must be beatable by BATMAN solo (GENERAL RULE)**: even
+  in Act 3 co-op, never gate a required path (peak, checkpoint bat,
+  exit) behind Robin's double jump. Vertical climbs are **≤3-tile
+  hops** (Batman jumps ~3.8 tiles) or need a grapple anchor within
+  `GRAPPLE_RANGE` (170px) of a surface Batman can launch from. A
+  6-tile step between wall tops is NOT solo-reachable — break it into
+  3-tile stairs (see 3-2's clusters).
 - **Only necessary grapples**: keep swing points that are the ONLY
   way to cross a pit / wall / gap. Decorative grapples over stepped
   roofs or walls with ladders should be dropped so each anchor
