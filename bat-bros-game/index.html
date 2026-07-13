@@ -100,10 +100,15 @@
       </div>
     </div>
     <div id="controls-right" class="float-controls">
-      <button id="btn-smoke" class="touch-btn touch-fire" style="display:none">💨</button>
-      <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
-      <button id="btn-grapple" class="touch-btn touch-fire" style="display:none">🪝</button>
-      <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
+      <!-- Plus-shape layout around the jump button:
+             🪝 (batigarra) on TOP
+        🪃 (batarang)  ⤒ (jump)
+             💨 (smoke) on BOTTOM
+      -->
+      <button id="btn-grapple" class="touch-btn touch-fire slot-top" style="display:none">🪝</button>
+      <button id="btn-shoot"   class="touch-btn touch-fire slot-left">🪃</button>
+      <button id="btn-jump"    class="touch-btn touch-jump slot-center">⤒</button>
+      <button id="btn-smoke"   class="touch-btn touch-fire slot-bottom" style="display:none">💨</button>
     </div>
   </div>
 </div>

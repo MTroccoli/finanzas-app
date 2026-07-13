@@ -185,7 +185,8 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          boats = [], cranes = [], snowCannons = [], spawn, name, indoor = false, dock = false, frozen = false,
+          boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
+          spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
@@ -250,7 +251,7 @@ function buildLevel(spec) {
 
   return {
     name,
-    width, height, groundY, indoor, dock, frozen,
+    width, height, groundY, indoor, dock, frozen, sewer,
     solid,
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
@@ -316,6 +317,30 @@ function buildLevel(spec) {
       alive: true,
     })),
     snowballs: [],
+    // Sewer critters (Act 4). Rats scurry along the ground at 2× thug
+    // speed; they can't be helmet-blocked but the small hitbox makes
+    // stomps harder to land. Confuse them with smoke = 1-hit kill.
+    rats: rats.map(r => ({
+      x: r.x * TILE, y: r.y * TILE - 14,
+      w: 22, h: 14,
+      minX: r.range[0] * TILE, maxX: r.range[1] * TILE,
+      vx: 2.4 * (r.dir ?? 1), alive: true,
+    })),
+    // Penguin-divers pop out of a water pit at a fixed interval,
+    // arc up N tiles, then fall back into the water. Stompable in
+    // the air; contact damages Batman otherwise.
+    divers: divers.map(d => ({
+      x: d.x * TILE + TILE / 2 - 12, y: (d.y ?? groundY) * TILE,
+      w: 24, h: 26,
+      restY: (d.y ?? groundY) * TILE + 6,     // where they hide (below water)
+      vy: 0,
+      state: 'wait',                            // wait | jumping | falling
+      nextJumpAt: 0,
+      interval: d.interval ?? 2200,
+      jumpHeight: d.height ?? 5,               // in tiles
+      alive: true,
+      facing: d.dir ?? 1,
+    })),
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;
       for (let ty = row; ty < height; ty++) {

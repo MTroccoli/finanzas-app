@@ -254,6 +254,26 @@ canvas {
 #controls-left { left: calc(12px + env(safe-area-inset-left, 0px)); }
 #controls-right { right: calc(12px + env(safe-area-inset-right, 0px)); }
 
+/* Right side layout: plus-shape around the jump button.
+       🪝 top
+   🪃 left  ⤒ center
+       💨 bottom
+   Uses CSS grid so any hidden button collapses without shifting
+   the others. The @media block below flips display:none → grid
+   when the on-screen controls are enabled. */
+#controls-right {
+  grid-template-columns: 70px 84px;
+  grid-template-rows: 70px 84px 70px;
+  gap: 8px;
+  column-gap: 10px;
+  align-items: center;
+  justify-items: center;
+}
+#controls-right .slot-top    { grid-column: 2; grid-row: 1; }
+#controls-right .slot-left   { grid-column: 1; grid-row: 2; }
+#controls-right .slot-center { grid-column: 2; grid-row: 2; }
+#controls-right .slot-bottom { grid-column: 2; grid-row: 3; }
+
 .touch-btn {
   touch-action: none;
   -webkit-touch-callout: none;
@@ -335,6 +355,9 @@ canvas {
 
 @media (hover: none) and (pointer: coarse) {
   .float-controls { display: flex; }
+  /* controls-right is a grid instead of a flex row so the plus
+     shape layout uses grid areas. */
+  #controls-right { display: grid; }
 }
 
 #rotate-overlay {

@@ -541,6 +541,84 @@ function playerCanUse(gadget) {
   return !!ownedGadgets[gadget];
 }
 
+// ---------------------------------------------------------------
+// Act 4 sewer enemies: rats (fast ground patrol) and penguin-
+// divers (arc out of water pits).
+// ---------------------------------------------------------------
+
+// Rat patrol + player contact. Same shape as the thug loop but
+// smaller, faster, and helmet-less. Confused rats are harmless
+// on side-contact just like confused thugs.
+function updateRats(dt, now) {
+  const list = level.rats || [];
+  for (const r of list) {
+    if (!r.alive) continue;
+    if (r.confused && (r.confusedUntil || 0) < now) r.confused = false;
+    const smokeMul = r.confused ? SMOKE_SPEED_MULT : 1;
+    r.x += r.vx * dt * smokeMul;
+    if (r.x < r.minX) { r.x = r.minX; r.vx = Math.abs(r.vx); }
+    if (r.x + r.w > r.maxX) { r.x = r.maxX - r.w; r.vx = -Math.abs(r.vx); }
+    if (!aabbOverlap(player, r)) continue;
+    const landing = player.vy > 0 && (player.y + player.h - r.y) < STOMP_TOLERANCE;
+    if (landing) {
+      r.alive = false;
+      player.vy = STOMP_BOUNCE;
+      score += 75; hud.score.textContent = score;
+    } else if (r.confused) {
+      continue;   // walk through unharmed
+    } else {
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+}
+
+// Penguin-divers wait at rest inside a water pit and periodically
+// launch a parabolic arc upward. They damage on contact if hit
+// mid-air except when Batman stomps them from above.
+function updateDivers(dt, now) {
+  const list = level.divers || [];
+  for (const d of list) {
+    if (!d.alive) continue;
+    if (d.confused && (d.confusedUntil || 0) < now) d.confused = false;
+
+    if (d.state === 'wait') {
+      if (!d.nextJumpAt) d.nextJumpAt = now + d.interval;
+      if (now >= d.nextJumpAt) {
+        // Launch — vy chosen to reach jumpHeight tiles under GRAVITY.
+        // apex: -vy² / (2 * GRAVITY). Solve for vy: sqrt(2 * G * h * TILE).
+        const h = d.jumpHeight * TILE;
+        d.vy = -Math.sqrt(2 * GRAVITY * h);
+        d.state = 'jumping';
+      }
+    } else {
+      d.vy += GRAVITY * dt * 0.6; // lighter fall so the arc lingers
+      d.y += d.vy * dt;
+      if (d.vy > 0 && d.y >= d.restY) {
+        // splash back into the water
+        d.y = d.restY;
+        d.vy = 0;
+        d.state = 'wait';
+        d.nextJumpAt = now + d.interval;
+      }
+    }
+
+    if (d.state === 'wait') continue;
+    if (!aabbOverlap(player, d)) continue;
+    const landing = player.vy > 0 && (player.y + player.h - d.y) < STOMP_TOLERANCE;
+    if (landing) {
+      d.alive = false;
+      player.vy = STOMP_BOUNCE;
+      score += 150; hud.score.textContent = score;
+    } else if (d.confused) {
+      continue;
+    } else {
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+}
+
 // --- Smoke bomb ---
 // The bomb lobs forward from the character's feet, arcs briefly
 // with gravity, and settles into a static cloud where it lands.
@@ -610,6 +688,8 @@ function applySmokeConfusion(cloud, now) {
   const list = [];
   if (level.thugs) list.push(...level.thugs);
   if (level.birds) list.push(...level.birds);
+  if (level.rats) list.push(...level.rats);
+  if (level.divers) list.push(...level.divers);
   if (level.mrfreeze && level.mrfreeze.birds) list.push(...level.mrfreeze.birds);
   for (const e of list) {
     if (!e.alive) continue;
@@ -690,6 +770,29 @@ function updateBatarangs(dt) {
         }
         b.phase = 'back';
         break;
+      }
+    }
+    if (b.phase !== 'out') continue;
+    // Rats + divers can also eat a batarang.
+    if (b.type !== 'batigarra' && level.rats) {
+      for (const r of level.rats) {
+        if (!r.alive) continue;
+        if (b.x + 8 > r.x && b.x - 8 < r.x + r.w && b.y + 8 > r.y && b.y - 8 < r.y + r.h) {
+          r.alive = false;
+          score += 75; hud.score.textContent = score;
+          b.phase = 'back'; break;
+        }
+      }
+    }
+    if (b.phase !== 'out') continue;
+    if (b.type !== 'batigarra' && level.divers) {
+      for (const d of level.divers) {
+        if (!d.alive || d.state === 'wait') continue;
+        if (b.x + 8 > d.x && b.x - 8 < d.x + d.w && b.y + 8 > d.y && b.y - 8 < d.y + d.h) {
+          d.alive = false;
+          score += 150; hud.score.textContent = score;
+          b.phase = 'back'; break;
+        }
       }
     }
     if (b.phase !== 'out') continue;
@@ -1891,6 +1994,19 @@ function completeLevel() {
     score += Math.floor(timeLeft) * 5;
     return;
   }
+  // 3-4 Mr. Freeze: after the reactor melts, unveil the Penguin
+  // trail (purple umbrella + monocle) and have Alfred hand Batman
+  // his smoke-bomb pouch before we drop into the sewers.
+  if (level.mrfreeze) {
+    state = 'penguinReveal';
+    penguinRevealStart = performance.now();
+    score += Math.floor(timeLeft) * 5;
+    // Grant smoke bombs on the spot so they're loaded when 4-1 opens.
+    ownedGadgets.smoke = true;
+    smokeAmmo = SMOKE_MAX_AMMO;
+    if (playerName) saveBeltState(playerName);
+    return;
+  }
   state = 'levelcomplete';
   stateTimer = 1400;
   score += Math.floor(timeLeft) * 5;
@@ -1900,6 +2016,84 @@ function completeLevel() {
     lives++;
     hud.lives.textContent = lives;
     stateTimer = 2200; // linger so the bonus line can be read
+  }
+}
+
+// Total length of the Penguin-reveal cutscene (ms). After it
+// finishes, we auto-load level 4-1.
+const PENGUIN_REVEAL_MS = 6500;
+let penguinRevealStart = 0;
+
+// Render the cutscene overlay: the frozen arena stays in the
+// background, a purple umbrella + monocle drops on the floor
+// where Freeze fell, and Alfred narrates the twist across the
+// bottom.
+function drawPenguinRevealOverlay() {
+  const now = performance.now();
+  const t = Math.min(1, (now - penguinRevealStart) / PENGUIN_REVEAL_MS);
+  ctx.fillStyle = `rgba(0,0,0,${0.35 + 0.15 * t})`;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Purple umbrella + monocle prop
+  const px = CANVAS_W / 2, py = CANVAS_H * 0.52;
+  const drop = Math.min(1, (now - penguinRevealStart) / 900);
+  const uy = py - 80 + 80 * drop;
+  ctx.save();
+  ctx.translate(px, uy);
+  ctx.rotate(-0.35);
+  // umbrella dome
+  ctx.fillStyle = '#5a2d8c';
+  ctx.beginPath();
+  ctx.moveTo(-46, 0); ctx.quadraticCurveTo(0, -46, 46, 0);
+  ctx.closePath(); ctx.fill();
+  // seams
+  ctx.strokeStyle = '#3d1e63'; ctx.lineWidth = 2;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, -46 * (1 - Math.abs(i) / 4));
+    ctx.lineTo(i * 12, 0);
+    ctx.stroke();
+  }
+  // handle (crescent / bat-shape, like Cobblepot's)
+  ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 60); ctx.stroke();
+  ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(-6, 66, 6, 0, Math.PI); ctx.stroke();
+  ctx.restore();
+
+  // Monocle next to the umbrella
+  const mx = px + 90, my = py + 20;
+  ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(mx, my, 14, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,207,107,0.4)';
+  ctx.beginPath(); ctx.moveTo(mx + 10, my + 10); ctx.lineTo(mx + 40, my + 40); ctx.stroke();
+
+  // Alfred voiceover box at the bottom
+  const boxY = CANVAS_H - 100;
+  ctx.fillStyle = 'rgba(6,10,16,0.85)';
+  ctx.fillRect(30, boxY, CANVAS_W - 60, 78);
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
+  ctx.strokeRect(30, boxY, CANVAS_W - 60, 78);
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('ALFRED', 46, boxY + 20);
+  ctx.fillStyle = '#e6f1ff'; ctx.font = '13px monospace';
+  const line = (idx, s) => ctx.fillText(s, 46, boxY + 40 + idx * 16);
+  line(0, 'Amo Bruce... Freeze no actuaba solo. Un paraguas y un monóculo,');
+  line(1, 'y un rastro que baja a las cloacas. Le dejo el pack de bombas de humo:');
+  line(2, 'donde va el Pingüino, mejor no ir a los tiros.');
+
+  // Auto-advance after PENGUIN_REVEAL_MS
+  if (t >= 1) {
+    penguinRevealStart = 0;
+    // Load 4-1 directly.
+    const idx41 = LEVEL_SPECS.findIndex(s => s.name === '4-1');
+    if (idx41 >= 0) {
+      loadLevel(idx41);
+      state = 'playing';
+    } else {
+      state = 'levelcomplete';
+      stateTimer = 1000;
+    }
   }
 }
 
@@ -2721,6 +2915,8 @@ function updatePlaying(dt) {
   updateBoats(dt);
   updateCranes(dt, now);
   updateSnowCannons(dt, now);
+  updateRats(dt, now);
+  updateDivers(dt, now);
   // Act 3 co-op companion — follows behind the active character
   if (companion) {
     const targetX = player.x - player.facing * 40;
@@ -5564,6 +5760,7 @@ function drawBackground(t) {
   if (level.cave) { drawCaveBackground(t); return; }
   if (level.twoface) { drawCargueroBackground(t); return; }
   if (level.mrfreeze) { drawFreezeArenaBackground(t); return; }
+  if (level.sewer) { drawSewerBackground(t); return; }
   if (level.indoor) { drawWarehouseBackground(t); return; }
   const alt = levelAltitude();
   // vertical parallax: the whole skyline sinks as Batman climbs above it
@@ -5923,6 +6120,7 @@ function drawWaterBand(x0, x1, waterTop, t, h) {
 }
 
 function drawDockWater(t) {
+  if (level.sewer) { drawSewerWater(t); return; }
   if (!level.dock) return;
   const waterTop = level.groundY * TILE - camera.y;
   if (waterTop > CANVAS_H) return;
@@ -5930,6 +6128,47 @@ function drawDockWater(t) {
   for (const [a, b] of level.pits) {
     const x0 = a * TILE - camera.x, x1 = (b + 1) * TILE - camera.x;
     drawWaterBand(x0, x1, waterTop, t, CANVAS_H - waterTop);
+  }
+}
+
+// Sewer canal water: murky green with slime highlights instead of
+// harbour blue. Only fills the pit ranges — the surrounding brick
+// walkway isn't underwater.
+function drawSewerWater(t) {
+  if (!level.pits || !level.pits.length) return;
+  const waterTop = level.groundY * TILE - camera.y;
+  if (waterTop > CANVAS_H) return;
+  for (const [a, b] of level.pits) {
+    const x0 = a * TILE - camera.x, x1 = (b + 1) * TILE - camera.x;
+    if (x1 < -20 || x0 > CANVAS_W + 20) continue;
+    const h = CANVAS_H - waterTop;
+    ctx.fillStyle = '#1a3a24';
+    ctx.fillRect(x0, waterTop, x1 - x0, h);
+    // slime highlight ripples
+    ctx.strokeStyle = 'rgba(140,220,160,0.28)';
+    ctx.lineWidth = 1;
+    const rows = Math.max(1, Math.floor(h / 14));
+    for (let i = 0; i < rows; i++) {
+      const yy = waterTop + 8 + i * 14;
+      if (yy > waterTop + h) break;
+      ctx.beginPath();
+      for (let x = x0; x <= x1; x += 14) {
+        const wy = yy + Math.sin((x + t / 50 + i * 27) / 34) * 2;
+        if (x === x0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+      }
+      ctx.stroke();
+    }
+    // scum layer at the top edge
+    ctx.fillStyle = 'rgba(180,240,180,0.32)';
+    ctx.fillRect(x0, waterTop, x1 - x0, 3);
+    // slime bubbles
+    const bubN = 3 + Math.floor((x1 - x0) / 60);
+    ctx.fillStyle = 'rgba(190,255,200,0.45)';
+    for (let k = 0; k < bubN; k++) {
+      const bx = x0 + ((k * 37 + t / 12) % (x1 - x0));
+      const by = waterTop + ((k * 11 + t / 20) % (h - 4));
+      ctx.beginPath(); ctx.arc(bx, by, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
   }
 }
 
@@ -7333,6 +7572,116 @@ function drawConfusedMarker(e) {
   ctx.fillText('?', px, py);
 }
 
+// Rat: small dark rodent with a pink tail, jittery scurry.
+function drawRats() {
+  const list = level.rats || [];
+  for (const r of list) {
+    if (!r.alive) continue;
+    const px = r.x - camera.x;
+    const py = r.y - camera.y;
+    if (px < -30 || px > CANVAS_W + 30) continue;
+    const face = r.vx < 0 ? -1 : 1;
+    const scur = Math.sin(performance.now() / 60 + r.x) * 1.5;
+    ctx.save();
+    ctx.translate(px + r.w / 2, py + r.h / 2 + scur);
+    ctx.scale(face, 1);
+    // body
+    ctx.fillStyle = '#4a3a30';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r.w * 0.5, r.h * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // belly
+    ctx.fillStyle = '#6b5340';
+    ctx.beginPath();
+    ctx.ellipse(0, 2, r.w * 0.42, r.h * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // head/snout
+    ctx.fillStyle = '#3d2f28';
+    ctx.beginPath();
+    ctx.ellipse(r.w * 0.35, -1, 6, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // ears
+    ctx.beginPath();
+    ctx.ellipse(r.w * 0.2, -r.h * 0.55, 3, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(r.w * 0.32, -r.h * 0.55, 3, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // eye
+    ctx.fillStyle = '#ff5e5e';
+    ctx.beginPath(); ctx.arc(r.w * 0.42, -1, 1.3, 0, Math.PI * 2); ctx.fill();
+    // pink tail wagging
+    ctx.strokeStyle = '#e396a4';
+    ctx.lineWidth = 1.8;
+    const tailWag = Math.sin(performance.now() / 90 + r.x) * 3;
+    ctx.beginPath();
+    ctx.moveTo(-r.w * 0.5, 0);
+    ctx.quadraticCurveTo(-r.w * 0.9, tailWag, -r.w * 1.05, tailWag * 1.5);
+    ctx.stroke();
+    ctx.restore();
+    if (r.confused) drawConfusedMarker(r);
+  }
+}
+
+// Penguin-diver: small tuxedoed bird with a fuse in his beak (a
+// bomb-fish of the Iceberg Lounge). Only visible when he's above
+// the water surface (state !== 'wait').
+function drawDivers() {
+  const list = level.divers || [];
+  for (const d of list) {
+    if (!d.alive) continue;
+    const px = d.x - camera.x;
+    const py = d.y - camera.y;
+    if (px < -40 || px > CANVAS_W + 40) continue;
+    // water ripples at the launch spot (always visible)
+    ctx.strokeStyle = 'rgba(140,220,180,0.5)';
+    ctx.lineWidth = 1.5;
+    const waterY = d.restY - camera.y + d.h;
+    ctx.beginPath();
+    ctx.moveTo(px - 2, waterY);
+    ctx.quadraticCurveTo(px + d.w / 2, waterY - 3, px + d.w + 2, waterY);
+    ctx.stroke();
+    if (d.state === 'wait') continue;
+    ctx.save();
+    ctx.translate(px + d.w / 2, py + d.h / 2);
+    ctx.scale(d.facing, 1);
+    // body (black tuxedo)
+    ctx.fillStyle = '#161a24';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 12, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // white belly triangle
+    ctx.fillStyle = '#f0f4f8';
+    ctx.beginPath();
+    ctx.moveTo(-6, -2); ctx.lineTo(6, -2); ctx.lineTo(4, 12); ctx.lineTo(-4, 12);
+    ctx.closePath(); ctx.fill();
+    // head
+    ctx.fillStyle = '#161a24';
+    ctx.beginPath(); ctx.arc(0, -6, 8, 0, Math.PI * 2); ctx.fill();
+    // eye
+    ctx.fillStyle = '#ffcf6b';
+    ctx.beginPath(); ctx.arc(3, -7, 1.6, 0, Math.PI * 2); ctx.fill();
+    // orange beak
+    ctx.fillStyle = '#ff8c1f';
+    ctx.beginPath();
+    ctx.moveTo(6, -6); ctx.lineTo(12, -4); ctx.lineTo(6, -2);
+    ctx.closePath(); ctx.fill();
+    // flippers flapping
+    const flap = Math.sin(performance.now() / 100 + d.x) * 4;
+    ctx.fillStyle = '#0e1218';
+    ctx.beginPath();
+    ctx.ellipse(-10, 2 + flap, 4, 8, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(10, 2 - flap, 4, 8, 0.3, 0, Math.PI * 2); ctx.fill();
+    // feet
+    ctx.fillStyle = '#ff8c1f';
+    ctx.fillRect(-4, 16, 4, 2);
+    ctx.fillRect(0, 16, 4, 2);
+    ctx.restore();
+    if (d.confused) drawConfusedMarker(d);
+  }
+}
+
 function drawBatarangs() {
   for (const b of batarangs) {
     const px = b.x - camera.x;
@@ -7477,6 +7826,71 @@ function drawGargoyles() {
 
 // ---------------------------------------------------------------
 // Mr. Freeze reactor rendering
+// ---------------------------------------------------------------
+// Act 4 — sewer background. Curved brick vault ceiling, wet
+// green-brown walls, occasional pipes running along the side and
+// beams of moonlight dropping through manhole covers.
+// ---------------------------------------------------------------
+function drawSewerBackground(t) {
+  const now = performance.now();
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#0e1712'); g.addColorStop(0.5, '#152018'); g.addColorStop(1, '#0a120c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  // curved vault arches along the ceiling
+  ctx.fillStyle = 'rgba(60,75,50,0.35)';
+  const archW = 140;
+  for (let i = 0; i <= CANVAS_W / archW + 1; i++) {
+    const ax = i * archW + 20 - ((camera.x * 0.4) % archW);
+    ctx.beginPath();
+    ctx.moveTo(ax, 0); ctx.lineTo(ax, 60);
+    ctx.quadraticCurveTo(ax + archW / 2, 130, ax + archW - 20, 60);
+    ctx.lineTo(ax + archW - 20, 0); ctx.closePath(); ctx.fill();
+  }
+  // brick pattern along the back wall
+  ctx.fillStyle = 'rgba(80,60,44,0.35)';
+  const brickW = 42, brickH = 18;
+  for (let by = 90; by < CANVAS_H - 40; by += brickH) {
+    const row = Math.floor(by / brickH);
+    const off = (row % 2) * (brickW / 2);
+    for (let bx = -brickW; bx < CANVAS_W + brickW; bx += brickW) {
+      const x = bx + off - ((camera.x * 0.35) % brickW);
+      ctx.fillRect(x + 2, by + 2, brickW - 4, brickH - 4);
+    }
+  }
+  // moisture streaks
+  ctx.strokeStyle = 'rgba(120,180,140,0.15)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 12; i++) {
+    const x = (i * 79 - (camera.x * 0.5)) % CANVAS_W;
+    ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, CANVAS_H - 60); ctx.stroke();
+  }
+  // pipes running along the top wall — big rusted lines
+  ctx.fillStyle = '#3a2a20';
+  ctx.fillRect(0, 34, CANVAS_W, 12);
+  ctx.fillStyle = '#5a4030'; ctx.fillRect(0, 34, CANVAS_W, 3);
+  ctx.fillStyle = '#1c110a'; ctx.fillRect(0, 44, CANVAS_W, 2);
+  // dripping condensation from the pipe
+  ctx.fillStyle = 'rgba(180,220,200,0.45)';
+  for (let i = 0; i < CANVAS_W; i += 46) {
+    const dropY = 46 + ((now / 6 + i * 3) % 60);
+    ctx.beginPath(); ctx.arc(i - (camera.x * 0.3) % 46, dropY, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+  // moonlight cones dropping through occasional manholes
+  for (let i = 0; i < CANVAS_W; i += 260) {
+    const x = i + 40 - ((camera.x * 0.6) % 260);
+    const grad = ctx.createLinearGradient(x, 0, x + 40, CANVAS_H);
+    grad.addColorStop(0, 'rgba(200,220,180,0.14)');
+    grad.addColorStop(1, 'rgba(200,220,180,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x, 0); ctx.lineTo(x + 40, 0); ctx.lineTo(x + 90, CANVAS_H); ctx.lineTo(x - 20, CANVAS_H);
+    ctx.closePath(); ctx.fill();
+  }
+  // green water shimmer at the very bottom (where the ground begins)
+  ctx.fillStyle = 'rgba(60,140,90,0.08)';
+  ctx.fillRect(0, CANVAS_H - 40, CANVAS_W, 40);
+}
+
 // ---------------------------------------------------------------
 function drawFreezeArenaBackground(t) {
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
@@ -9078,6 +9492,8 @@ function render(t) {
   drawSwingRope();
   drawThugs();
   drawBirds(t);
+  drawRats();
+  drawDivers();
   if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
   drawSnowballs(t);
@@ -9124,6 +9540,14 @@ function loop(now) {
   if (state === 'playing' || state === 'levelcomplete') {
     update(dt);
     render(now);
+  } else if (state === 'penguinReveal') {
+    // Freeze arena stays in the background while Alfred narrates the
+    // Penguin reveal — no updatePlaying because Batman is done here.
+    render(now);
+    drawPenguinRevealOverlay();
+    // Tap to skip to 4-1
+    const skip = now < jumpBufferUntil || now < shootBufferUntil;
+    if (skip) penguinRevealStart -= PENGUIN_REVEAL_MS;
   } else if (state === 'rescue') {
     render(now);
     drawRescueScene(now);

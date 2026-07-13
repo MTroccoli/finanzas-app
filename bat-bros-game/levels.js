@@ -727,4 +727,79 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 11 },
 });
 
+// ==============================================================
+// ACT 4 — LAS CLOACAS DEL PINGÜINO
+// El rastro que dejó Freeze lleva bajo tierra. Batman y Robin
+// bajan a las alcantarillas de Gotham con las bombas de humo que
+// Alfred les entregó al salir del reactor. La escenografía cambia
+// completamente: bóvedas de ladrillo mojado, canales de agua
+// verdosa, ratas y esbirros que Cobblepot manda emerger del agua.
+// ==============================================================
+
+// 4-1 — ALCANTARILLAS INICIALES. Introducción del acto: un
+// túnel horizontal amplio con dos canales de agua y las primeras
+// ratas. Ritmo suave, sin trampas nuevas más que la propia bomba
+// de humo (que ya arranca equipada).
+LEVEL_SPECS.push({
+  name: '4-1',
+  sewer: true,
+  width: 88, height: 22, groundY: 19,
+  pits: [[22, 28], [58, 66]],   // dos canales de agua
+  platforms: [
+    // Tapa de alcantarilla a modo de plataforma flotante para saltar
+    // entre canales.
+    { x: 40, y: 15, w: 3 },
+    { x: 74, y: 16, w: 2 },
+  ],
+  walls: [
+    // Losa de ladrillo que separa dos tramos del túnel: obliga a
+    // trepar la escalerita o saltar sobre las tapas.
+    { x: 32, w: 2, topRow: 15 },
+    { x: 50, w: 3, topRow: 14 },
+    { x: 68, w: 2, topRow: 16 },
+  ],
+  ladders: [
+    { x: 31, topRow: 15, baseRow: 19 },
+    { x: 51, topRow: 14, baseRow: 19 },
+    { x: 69, topRow: 16, baseRow: 19 },
+  ],
+  houses: [],
+  swingPoints: [
+    // Tubo de desagüe roto sirviendo de anclaje para la batigarra
+    // sobre cada canal.
+    [25, 13],
+    [61, 12],
+  ],
+  coins: [
+    [5, 18], [8, 18], [14, 18], [18, 18],
+    [25, 13], [26, 13],   // arriba del canal 1
+    [37, 14], [41, 14],
+    [45, 18], [48, 18],
+    [61, 12], [62, 12],   // arriba del canal 2
+    [74, 15],
+    [80, 18], [84, 18],
+  ],
+  thugs: [
+    // Un par de secuaces del Pingüino patrullando pasillos secos.
+    { x: 15, y: 19, range: [12, 18] },
+    { x: 45, y: 19, range: [43, 48] },
+    { x: 80, y: 19, range: [77, 84] },
+  ],
+  rats: [
+    // Ratas rápidas — la primera intro sirve para que el jugador
+    // aprenda que corren más rápido que un thug.
+    { x: 34, y: 19, range: [34, 40], dir: 1 },
+    { x: 52, y: 19, range: [52, 57] },
+    { x: 78, y: 19, range: [72, 82] },
+  ],
+  divers: [
+    // Pingüinos-buzo saltando del centro de cada canal
+    { x: 25, y: 19, interval: 2400, height: 5 },
+    { x: 62, y: 19, interval: 2800, height: 6 },
+  ],
+  birds: [],
+  bats: [[41, 14]],   // checkpoint entre canales
+  spawn: { x: 2, y: 17 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
