@@ -135,12 +135,17 @@ const FREEZE_BUTTON_HITS = 3;        // stomps required per button (crack → re
 // gun was a short-range popgun before; it now travels straight (no
 // gravity) and reaches farther so mid-arena positions aren't safe.
 const FREEZE_PATROL_SPEED = 1.25;    // floor wander speed
-const FREEZE_SHOT_INTERVAL = 1400;   // ms between cold-gun shots (0 buttons active)
-const FREEZE_SHOT_INTERVAL_MIN = 650;// fastest cadence once buttons start going down
+// Shots are diagonally upward now (see mf.gunAngle in updateMrFreeze),
+// so the player has clear breathing room on the floor between salvos.
+// The old cadence (1400 → 650 ms) felt like a stun-lock. Bumped by
+// ~60% so a well-timed dive between shots is realistic.
+const FREEZE_SHOT_INTERVAL = 2400;   // ms between cold-gun shots (0 buttons active)
+const FREEZE_SHOT_INTERVAL_MIN = 1200;// fastest cadence once buttons start going down
 const FREEZE_SHOT_PAUSE = 420;       // he plants his feet to aim this long before a shot
 const FREEZE_MUZZLE_MS = 180;        // muzzle-flash duration per shot
 const FREEZE_BEAM_SPEED = 11;        // straight-line projectile speed (was ~7)
 const FREEZE_BEAM_LIFESPAN_MS = 2200;// how long a beam flies before dying off-screen
+const FREEZE_GUN_UP_ANGLE = Math.PI / 4; // 45° above horizontal, direction of shots
 // Falling ceiling stalactites. In addition to the columns over each
 // button they now also drop from between the buttons and both extremes
 // of the arena, so there's nowhere to just stand and wait.
@@ -208,6 +213,9 @@ function buildLevel(spec) {
     cargoH: TILE * 2,
     speed: c.speed,
     amplitude: c.amplitude,
+    // Explicit phase offset so two cranes on the same map don't
+    // start in phase and appear to be moving on the same beat.
+    phase: c.phase || 0,
     angle: 0,
     cargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
     cargoY: c.armY * TILE + c.ropeLen * TILE,
@@ -273,7 +281,10 @@ function buildLevel(spec) {
     boats: boats.map(b => ({
       x: b.x * TILE, y: b.y * TILE, w: (b.w || 4) * TILE, h: BOAT_THICK,
       minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
-      vx: b.speed ?? 1.0,
+      // dir defaults to +1 (moving right); set to -1 for a raft that
+      // starts pointing at the opposite edge so parallel boats don't
+      // ride the same beat.
+      vx: (b.speed ?? 1.0) * (b.dir ?? 1),
     })),
     cranes: builtCranes,
     // Act-3 cold-city hazard: a chunky snow cannon on the ground that
@@ -437,8 +448,12 @@ function buildLevel(spec) {
         // patrol goons — same shape as regular birds so the batarang loop
         // can hit them via the merged pool in game.js
         birds,
-        // decorative gothic organ on the back wall
-        organTopY: 1 * TILE, organBotY: 7 * TILE,
+        // Compact cryo-reactor on the back wall. Smaller than the old
+        // gothic organ (was 1..7 TILE = 6 tiles tall) so it doesn't
+        // dominate the arena and reads clearly as ONE machine — a
+        // central cylindrical core with cooling coils and pipes going
+        // down to each button.
+        organTopY: 2 * TILE, organBotY: 5 * TILE,
       };
     })() : null,
     // gargoyle perches are only meaningful in the Bane warehouse fight

@@ -601,13 +601,18 @@ LEVEL_SPECS.push({
     { x: 62, y: 16, w: 3 },
   ],
   // Warehouses along the pier: short at the start, taller at the
-  // container yard mid-level, and one last shed at the end.
+  // container yard mid-level, and one last shed at the end. The
+  // end warehouse used to be topRow: 12 (7 tiles tall) which
+  // trapped Batman in the last third — you couldn't backtrack
+  // without killing every roof thug. Lowered to topRow: 15 so a
+  // simple jump from ground level puts him back on top even if
+  // the goons are alive.
   walls: [
     { x: 16, w: 3, topRow: 15 },   // first warehouse
     { x: 24, w: 3, topRow: 13 },   // taller warehouse
     { x: 50, w: 4, topRow: 14 },   // container yard building
     { x: 66, w: 3, topRow: 15 },   // pre-water shed
-    { x: 96, w: 4, topRow: 12 },   // end warehouse
+    { x: 96, w: 4, topRow: 15 },   // end warehouse (was 12)
   ],
   ladders: [
     { x: 15, topRow: 15, baseRow: 19 },
@@ -615,20 +620,24 @@ LEVEL_SPECS.push({
     { x: 27, topRow: 13, baseRow: 19 },
     { x: 49, topRow: 14, baseRow: 19 },
     { x: 65, topRow: 15, baseRow: 19 },
-    { x: 95, topRow: 12, baseRow: 19 },
+    { x: 95, topRow: 15, baseRow: 19 },
   ],
   houses: [],
   // Two cargo cranes swing containers over the water so a well-timed
-  // stomp or grapple hop crosses the gap on top of the load.
+  // stomp or grapple hop crosses the gap on top of the load. Each
+  // crane runs on its own beat (different speed + explicit phase
+  // offset) so they don't sync up with the boats beneath.
   cranes: [
-    { towerX: 27, armY: 3, armEndX: 38, ropeLen: 10, cargoW: 3, speed: 0.0012, amplitude: 0.42 },
-    { towerX: 89, armY: 3, armEndX: 80, ropeLen: 11, cargoW: 3, speed: 0.0010, amplitude: 0.45 },
+    { towerX: 27, armY: 3, armEndX: 38, ropeLen: 10, cargoW: 3, speed: 0.0013, amplitude: 0.42, phase: 0 },
+    { towerX: 89, armY: 3, armEndX: 80, ropeLen: 11, cargoW: 3, speed: 0.00085, amplitude: 0.45, phase: Math.PI * 0.6 },
   ],
   // Drifting rafts frozen into moving ice sheets — same class as
-  // 2-1's dock raft, one per water gap.
+  // 2-1's dock raft, one per water gap. The second raft starts
+  // pointing the opposite way so the two boats never share the
+  // same beat with each other or with the cranes above.
   boats: [
-    { x: 36, y: 19, w: 3, range: [31, 44], speed: 2.1 },
-    { x: 78, y: 19, w: 3, range: [73, 88], speed: 2.4 },
+    { x: 36, y: 19, w: 3, range: [31, 44], speed: 1.9, dir: 1 },
+    { x: 78, y: 19, w: 3, range: [73, 88], speed: 2.6, dir: -1 },
   ],
   swingPoints: [
     // Anchor before pit #1 in case the crane cargo is on the wrong side
@@ -647,18 +656,21 @@ LEVEL_SPECS.push({
     [51, 13], [52, 13],
     [63, 15],
     [79, 18], [82, 18],   // sit on boat #2
-    [97, 11], [100, 18], [104, 18],
+    [97, 14], [100, 18], [104, 18],
   ],
   thugs: [
     // Opener with a 10-tile buffer from spawn (tile 2)
     { x: 12, y: 19, range: [10, 14], frozen: true },
-    { x: 18, y: 15, range: [17, 19], helmet: true, frozen: true },
-    { x: 25, y: 13, range: [24, 27], frozen: true },
-    { x: 52, y: 14, range: [50, 54], helmet: true, frozen: true },
+    // Rooftop patrols: each range now reaches the ladder-top tile
+    // so a player can't just wait for the goon to walk to the
+    // wrong side and slip past.
+    { x: 18, y: 15, range: [15, 18], helmet: true, frozen: true },
+    { x: 25, y: 13, range: [23, 27], frozen: true },
+    { x: 52, y: 14, range: [49, 53], helmet: true, frozen: true },
     { x: 63, y: 19, range: [60, 66], frozen: true },
-    { x: 68, y: 15, range: [67, 69], helmet: true, frozen: true },
+    { x: 68, y: 15, range: [65, 68], helmet: true, frozen: true },
     { x: 92, y: 19, range: [90, 94], frozen: true },
-    { x: 97, y: 12, range: [96, 100], helmet: true, frozen: true },
+    { x: 97, y: 15, range: [95, 99], helmet: true, frozen: true },
     { x: 103, y: 19, range: [100, 107], frozen: true },
   ],
   snowCannons: [

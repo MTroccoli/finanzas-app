@@ -1354,7 +1354,7 @@ function updateBoats(dt) {
 function updateCranes(dt, now) {
   for (const crane of level.cranes) {
     crane.prevCargoX = crane.cargoX;
-    crane.angle = Math.sin(now * crane.speed) * crane.amplitude;
+    crane.angle = Math.sin(now * crane.speed + (crane.phase || 0)) * crane.amplitude;
     crane.cargoX = crane.anchorX + Math.sin(crane.angle) * crane.ropeLen - crane.cargoW / 2;
     crane.cargoY = crane.anchorY + Math.cos(crane.angle) * crane.ropeLen;
     for (const cc of crane.craneCoins) {
@@ -2226,11 +2226,18 @@ function updateMrFreeze(dt, now) {
     return;
   }
 
-  // --- Mr. Freeze wanders the floor and fires his cold gun at Batman ---
-  const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
-  const gy = mf.fy + mf.fh * 0.42;
-  mf.gunAngle = Math.atan2(pcy - gy, pcx - (mf.fx + mf.fw / 2));
+  // --- Mr. Freeze wanders the floor and fires his cold gun diagonally
+  //     upward. He turns to keep the player on the shooting side but the
+  //     VERTICAL angle is fixed (45° up), so the floor stays safe between
+  //     salvos and the beams go for the perches / air-space where Batman
+  //     dives at the buttons. ---
+  const pcx = player.x + player.w / 2;
   mf.facing = pcx >= (mf.fx + mf.fw / 2) ? 1 : -1;
+  // Canvas coords: y grows down, so a NEGATIVE sin() component points
+  // up. Facing right → angle = -PI/4. Facing left → angle = -3PI/4.
+  mf.gunAngle = mf.facing > 0
+    ? -FREEZE_GUN_UP_ANGLE
+    : (-Math.PI + FREEZE_GUN_UP_ANGLE);
   const aiming = now < mf.aimUntil;
   if (!aiming) {                       // he plants his feet while aiming
     mf.fx += mf.fvx * dt;
@@ -5758,30 +5765,53 @@ function drawLadders() {
 // Same solid collision as any other wall — this is purely the look.
 function drawContainerTower(w, x0, wpx, roofY, groundPx) {
   const bandH = TILE * 2;
-  const palette = ['#8b4a3a', '#4a6a8b', '#5a6a3a', '#7a5a3a', '#3a5a6a', '#6a4a5a'];
+  // Wider palette + deterministic per-container hue so stacked crates
+  // in the same yard clearly read as DIFFERENT containers instead of
+  // one long painted wall.
+  const palette = [
+    '#c1462d', '#3a6bc9', '#3f8c46', '#c9852e',
+    '#7c3f9c', '#2a8aa3', '#a86436', '#d4b12b',
+    '#5b7a3a', '#8b3a52',
+  ];
+  // Each band is split into containers roughly 3 tiles wide so a
+  // 4-tile warehouse shows two side-by-side crates per band and a
+  // 3-tile one still shows a single crate. This gives the yard its
+  // "stacked shipping containers" silhouette.
+  const containerW = TILE * 3;
   let y = roofY, band = 0;
   while (y < groundPx - 1) {
     const h = Math.min(bandH, groundPx - y);
-    const col = palette[Math.floor(hash01(w.x * 3.1 + band * 11) * palette.length)];
-    ctx.fillStyle = col;
-    ctx.fillRect(x0, y, wpx, h);
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
-    ctx.strokeRect(x0 + 0.5, y + 0.5, wpx - 1, h - 1);
-    // top highlight + bottom shadow
-    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(x0 + 2, y + 2, wpx - 4, 4);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x0 + 2, y + h - 6, wpx - 4, 4);
-    // corrugation lines
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    for (let cx = x0 + 8; cx < x0 + wpx - 4; cx += 18) {
-      ctx.beginPath(); ctx.moveTo(cx, y + 6); ctx.lineTo(cx, y + h - 6); ctx.stroke();
+    let cx0 = x0;
+    let col = 0;
+    while (cx0 < x0 + wpx - 0.5) {
+      const cw = Math.min(containerW, x0 + wpx - cx0);
+      const seed = w.x * 3.1 + band * 11 + col * 17;
+      const paint = palette[Math.floor(hash01(seed) * palette.length)];
+      ctx.fillStyle = paint; ctx.fillRect(cx0, y, cw, h);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+      ctx.strokeRect(cx0 + 0.5, y + 0.5, cw - 1, h - 1);
+      // top highlight + bottom shadow
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(cx0 + 2, y + 2, cw - 4, 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(cx0 + 2, y + h - 6, cw - 4, 4);
+      // corrugation lines
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      for (let lx = cx0 + 8; lx < cx0 + cw - 4; lx += 12) {
+        ctx.beginPath(); ctx.moveTo(lx, y + 6); ctx.lineTo(lx, y + h - 6); ctx.stroke();
+      }
+      // shipping label + serial code (looks like a real container)
+      ctx.fillStyle = 'rgba(240,240,240,0.85)';
+      ctx.fillRect(cx0 + cw * 0.25, y + h * 0.32, cw * 0.5, h * 0.16);
+      ctx.fillStyle = '#111';
+      ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center';
+      const serials = ['MSK', 'GOT', 'WYN', 'BAT', 'ACE', 'ZUR'];
+      ctx.fillText(serials[Math.floor(hash01(seed + 3) * serials.length)] + Math.floor(hash01(seed + 5) * 900 + 100),
+        cx0 + cw * 0.5, y + h * 0.44);
+      // corner castings
+      ctx.fillStyle = '#1a1c22';
+      ctx.fillRect(cx0, y, 5, 5); ctx.fillRect(cx0 + cw - 5, y, 5, 5);
+      ctx.fillRect(cx0, y + h - 5, 5, 5); ctx.fillRect(cx0 + cw - 5, y + h - 5, 5, 5);
+      cx0 += cw; col++;
     }
-    // shipping label
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(x0 + wpx * 0.3, y + h * 0.3, wpx * 0.4, h * 0.15);
-    // corner castings
-    ctx.fillStyle = '#1a1c22';
-    ctx.fillRect(x0, y, 5, 5); ctx.fillRect(x0 + wpx - 5, y, 5, 5);
-    ctx.fillRect(x0, y + h - 5, 5, 5); ctx.fillRect(x0 + wpx - 5, y + h - 5, 5, 5);
     y += bandH; band++;
   }
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
@@ -6468,18 +6498,83 @@ function drawPlayerRobin(t) {
   const px = player.x - camera.x;
   const py = player.y - camera.y;
   const flipX = player.facing < 0;
+  // Climbing: back-turned sprite with alternating arms/legs, matching
+  // Batman's climbing pose so both characters read the same on ladders.
+  if (player.climbing) {
+    drawRobinClimbing(px, player.w, player.h);
+    drawFrozenOverlay(px, py, player.w, player.h);
+    return;
+  }
   // somersault rotation for Robin's double jump
   const somer = player.somersaultUntil && performance.now() < player.somersaultUntil
     ? (performance.now() - (player.somersaultUntil - 400)) / 400 : 0;
+  // Legs animate off distance travelled while on the ground, same
+  // rule as Batman: no walking-in-place while airborne or idle.
+  const moving = player.onGround && Math.abs(player.vx) > 0.3;
+  const walkPhase = moving ? (player.walkDist || 0) / 6 : 0;
   ctx.save();
   ctx.translate(px + player.w / 2, py + player.h / 2);
   if (somer > 0) ctx.rotate(somer * Math.PI * 2);
   if (flipX) ctx.scale(-1, 1);
   ctx.translate(-12, -player.h / 2);
-  drawRobinSprite(0, 0, player.h / 55, false, 0);
+  drawRobinSprite(0, 0, player.h / 55, false, 0, walkPhase);
   ctx.restore();
 
   drawFrozenOverlay(px, py, player.w, player.h);
+}
+
+// Robin from behind, gripping a ladder: yellow cape hangs down, R
+// tunic covered, arms reaching up alternately. Matches the pose
+// Batman uses in drawPlayerClimbing so the ladder reads the same.
+function drawRobinClimbing(px, w, h) {
+  const climbPhase = (player.walkDist || 0) / 8;
+  const armA = Math.sin(climbPhase) * 6;
+  const armB = Math.sin(climbPhase + Math.PI) * 6;
+  const legA = Math.sin(climbPhase) * 3;
+  const legB = Math.sin(climbPhase + Math.PI) * 3;
+  ctx.save();
+  ctx.translate(px, player.y - camera.y);
+
+  // spiky hair at the top of the head
+  ctx.fillStyle = '#16181e';
+  ctx.beginPath();
+  ctx.moveTo(1, 4); ctx.lineTo(3, -3); ctx.lineTo(6, 2); ctx.lineTo(9, -4);
+  ctx.lineTo(13, 1); ctx.lineTo(16, -3); ctx.lineTo(w - 1, 4);
+  ctx.lineTo(w - 2, 8); ctx.lineTo(2, 8); ctx.closePath(); ctx.fill();
+
+  // yellow cape draped over the back — the big visual cue
+  ctx.fillStyle = '#f1c40f';
+  ctx.beginPath();
+  ctx.moveTo(0, 8);
+  ctx.lineTo(-3, h * 0.5);
+  ctx.lineTo(w * 0.15, h - 2);
+  ctx.lineTo(w * 0.85, h - 2);
+  ctx.lineTo(w + 3, h * 0.5);
+  ctx.lineTo(w, 8);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#d4a90c';
+  ctx.fillRect(w * 0.4, h - 4, w * 0.2, 3);
+
+  // green trunks/belt band just below the mid-back
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillRect(2, h * 0.55, w - 4, 3);
+  ctx.fillStyle = '#1e8449';
+  ctx.fillRect(2, h * 0.58, w - 4, 5);
+
+  // arms reaching up alternately (green sleeves)
+  ctx.fillStyle = '#1e8449';
+  ctx.fillRect(-3, 6 + armA, 5, 10);
+  ctx.fillRect(w - 2, 6 + armB, 5, 10);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(-3, 14 + armA, 4, 4);
+  ctx.fillRect(w - 1, 14 + armB, 4, 4);
+
+  // green boots peeking below the cape
+  ctx.fillStyle = '#146034';
+  ctx.fillRect(3, h - 6 + legA, 7, 6);
+  ctx.fillRect(w - 10, h - 6 + legB, 7, 6);
+
+  ctx.restore();
 }
 
 // Shared: draw the icy wash + countdown bar over an active player.
@@ -7119,45 +7214,95 @@ function drawMrFreeze(t) {
   const heat = melting ? 1 : mf.temp;
   const floorY = level.groundY * TILE - camera.y;
 
-  // ===== gothic organ machine (decorative, on the back wall) =====
+  // ===== cryo-reactor machine (back wall) =====
+  // Compact horizontal reactor: cylindrical core in the middle,
+  // cooling coils on both sides, three pipes going down to the
+  // buttons. Reads as ONE machine, and shorter than the old organ
+  // so it doesn't cover half the arena.
   const oTop = mf.organTopY - camera.y, oBot = mf.organBotY - camera.y;
-  const oLeft = 4 * TILE - camera.x, oRight = (level.width - 4) * TILE - camera.x;
+  const oLeft = 6 * TILE - camera.x, oRight = (level.width - 6) * TILE - camera.x;
   const oW = oRight - oLeft, ocx = (oLeft + oRight) / 2;
-  // buttresses to the floor
-  ctx.fillStyle = '#182636';
-  ctx.fillRect(oLeft - 6, oTop + 10, 14, floorY - oTop - 10);
-  ctx.fillRect(oRight - 8, oTop + 10, 14, floorY - oTop - 10);
-  // organ body
-  const bg = ctx.createLinearGradient(0, oTop, 0, oBot); bg.addColorStop(0, '#2c4661'); bg.addColorStop(1, '#16242f');
-  ctx.fillStyle = bg; ctx.fillRect(oLeft, oTop + 8, oW, oBot - oTop - 8);
-  ctx.fillStyle = 'rgba(150,210,240,0.18)'; ctx.fillRect(oLeft, oTop + 8, oW, oBot - oTop - 8);
-  // organ pipes (tall, varying heights)
-  const pipeN = 13;
-  for (let i = 0; i < pipeN; i++) {
-    const px = oLeft + 16 + i * (oW - 32) / (pipeN - 1);
-    const ph = 24 + ((i * 37) % 5) * 12 + (Math.abs(i - (pipeN - 1) / 2) < 2 ? 22 : 0);
-    ctx.fillStyle = i % 2 ? '#2b415a' : '#35526d';
-    ctx.fillRect(px - 6, oTop + 8 - ph, 12, ph + 8);
-    ctx.beginPath(); ctx.arc(px, oTop + 8 - ph, 6, Math.PI, 0); ctx.fill();
-    ctx.fillStyle = 'rgba(180,220,255,0.22)'; ctx.fillRect(px - 6, oTop + 8 - ph, 3, ph);
+  const oH = oBot - oTop;
+  // ceiling mount clamps (holds the reactor to the roof)
+  ctx.fillStyle = '#0f1a26';
+  ctx.fillRect(oLeft + oW * 0.15, oTop - 8, 22, 12);
+  ctx.fillRect(oRight - oW * 0.15 - 22, oTop - 8, 22, 12);
+  ctx.fillRect(ocx - 12, oTop - 10, 24, 14);
+  // Chassis: dark blue-grey with panel line
+  const chassisG = ctx.createLinearGradient(0, oTop, 0, oBot);
+  chassisG.addColorStop(0, '#2f4a66'); chassisG.addColorStop(1, '#182635');
+  ctx.fillStyle = chassisG; ctx.fillRect(oLeft, oTop, oW, oH);
+  ctx.strokeStyle = '#0b1219'; ctx.lineWidth = 2; ctx.strokeRect(oLeft + 0.5, oTop + 0.5, oW - 1, oH - 1);
+  // Rivets along the top edge to sell "metal panel"
+  ctx.fillStyle = '#8fb3d0';
+  for (let rx = oLeft + 14; rx < oRight - 8; rx += 24) {
+    ctx.beginPath(); ctx.arc(rx, oTop + 8, 2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(rx, oBot - 8, 2, 0, 7); ctx.fill();
   }
-  // central core (glows, heats up, bursts on overload)
-  const ccx = ocx, ccy = (oTop + oBot) / 2, cr = 26;
-  const glow = ctx.createRadialGradient(ccx, ccy, 3, ccx, ccy, cr * 2.4);
-  glow.addColorStop(0, melting ? 'rgba(255,140,60,0.75)' : `rgba(90,180,255,${0.4 + heat * 0.3})`);
+  // Cylindrical central core
+  const ccx = ocx, ccy = (oTop + oBot) / 2, cr = Math.min(22, oH * 0.34);
+  // core housing ring
+  ctx.fillStyle = '#0a1620'; ctx.beginPath(); ctx.arc(ccx, ccy, cr + 6, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#3a5f7c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ccx, ccy, cr + 6, 0, 7); ctx.stroke();
+  // glow
+  const glow = ctx.createRadialGradient(ccx, ccy, 3, ccx, ccy, cr * 2.6);
+  glow.addColorStop(0, melting ? 'rgba(255,140,60,0.85)' : `rgba(90,200,255,${0.5 + heat * 0.3})`);
   glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ccx, ccy, cr * 2.4, 0, 7); ctx.fill();
-  ctx.fillStyle = melting ? '#3a2418' : '#0e2a40'; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.fill();
-  ctx.strokeStyle = melting ? '#c8703a' : '#2f6f9f'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.stroke();
-  ctx.fillStyle = melting ? 'rgba(255,180,120,0.6)' : 'rgba(150,220,255,0.5)'; ctx.beginPath(); ctx.arc(ccx, ccy, cr * 0.45, 0, 7); ctx.fill();
-  // gothic finial cross above the organ
-  ctx.strokeStyle = '#7fbfe0'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(ccx, oTop - 58); ctx.lineTo(ccx, oTop - 34); ctx.moveTo(ccx - 7, oTop - 48); ctx.lineTo(ccx + 7, oTop - 48); ctx.stroke();
-  // overload steam
-  if (melting) {
-    ctx.fillStyle = 'rgba(240,250,255,0.4)';
-    for (let s = 0; s < 8; s++) { const sy = ccy - ((now / 4 + s * 30) % 150); ctx.beginPath(); ctx.arc(ccx + Math.sin(now / 150 + s) * 30, sy, 8 + s, 0, 7); ctx.fill(); }
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ccx, ccy, cr * 2.6, 0, 7); ctx.fill();
+  // core disk
+  ctx.fillStyle = melting ? '#4a2818' : '#0e2a40'; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.fill();
+  ctx.strokeStyle = melting ? '#c8703a' : '#4fa8e8'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.stroke();
+  ctx.fillStyle = melting ? 'rgba(255,180,120,0.7)' : 'rgba(180,240,255,0.65)';
+  ctx.beginPath(); ctx.arc(ccx, ccy, cr * 0.55, 0, 7); ctx.fill();
+  // rotating hazard notches inside the core
+  ctx.save();
+  ctx.translate(ccx, ccy); ctx.rotate((now / 900) % (Math.PI * 2));
+  ctx.fillStyle = melting ? 'rgba(60,20,10,0.8)' : 'rgba(15,40,60,0.9)';
+  for (let k = 0; k < 3; k++) {
+    ctx.rotate(Math.PI * 2 / 3);
+    ctx.fillRect(-2, -cr + 3, 4, 10);
   }
+  ctx.restore();
+  // Cooling coils (left + right of the core) — nested arcs
+  ctx.strokeStyle = melting ? '#c8703a' : '#7fd0ec'; ctx.lineWidth = 2;
+  for (const side of [-1, 1]) {
+    const px0 = ccx + side * (cr + 12);
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(px0 + side * (i * 10 + 8), ccy, 12 - i * 2, Math.PI * 0.5, Math.PI * 1.5, side > 0);
+      ctx.stroke();
+    }
+    // coolant tank on the far end
+    ctx.fillStyle = '#243d55';
+    const tx = side > 0 ? oRight - 34 : oLeft + 8;
+    ctx.fillRect(tx, ccy - 16, 26, 32);
+    ctx.strokeStyle = '#0b1219'; ctx.strokeRect(tx + 0.5, ccy - 15.5, 25, 31);
+    // liquid window with bubbles
+    ctx.fillStyle = melting ? 'rgba(255,140,60,0.6)' : 'rgba(90,200,255,0.55)';
+    ctx.fillRect(tx + 4, ccy - 12, 18, 24);
+    ctx.fillStyle = 'rgba(230,250,255,0.7)';
+    ctx.beginPath(); ctx.arc(tx + 8, ccy + 6 - ((now / 12) % 20), 1.6, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(tx + 16, ccy + 4 - ((now / 10 + 30) % 20), 1.4, 0, 7); ctx.fill();
+    // "CRYO" label on the tank
+    ctx.fillStyle = melting ? '#ffb87a' : '#9de5ff';
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('CRYO', tx + 13, ccy + 24);
+  }
+  // Steam / vapor jets on top of the reactor (subtle when idle, wild on overload)
+  const steamCount = melting ? 8 : 3;
+  ctx.fillStyle = melting ? 'rgba(255,200,150,0.5)' : 'rgba(200,235,255,0.35)';
+  for (let s = 0; s < steamCount; s++) {
+    const sy = oTop - 6 - ((now / (melting ? 4 : 12) + s * 40) % (melting ? 120 : 40));
+    const sx = ccx + Math.sin(now / 250 + s) * 22;
+    const sr = 4 + s * (melting ? 1.4 : 0.6);
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill();
+  }
+  // Warning label above the core so the machine is unambiguous
+  ctx.fillStyle = melting ? '#ffb060' : '#ffcf6b';
+  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('◄ CRYO REACTOR ►', ccx, oTop + 12);
+  ctx.fillStyle = '#8fd0ec';
+  ctx.fillRect(ccx - 40, oTop + 15, 80, 2);
 
   // ===== 3 control columns + buttons =====
   mf.buttons.forEach((b) => {
@@ -7877,7 +8022,10 @@ function drawImpactEffects(now) {
 
 // Robin, classic costume: red tunic with the R badge, yellow cape,
 // green sleeves/gloves/trunks/boots, domino mask, spiky hair.
-function drawRobinSprite(x, y, s, tied, wiggle = 0) {
+// walkPhase (optional) drives the leg stride so the legs actually
+// step when Robin walks — a Math.sin(walkPhase) offset is applied
+// to each boot to mimic Batman's walk cycle.
+function drawRobinSprite(x, y, s, tied, wiggle = 0, walkPhase = 0) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(wiggle);
@@ -7890,12 +8038,17 @@ function drawRobinSprite(x, y, s, tied, wiggle = 0) {
   ctx.beginPath();
   ctx.moveTo(20, 12); ctx.lineTo(30, 32); ctx.lineTo(22, 42); ctx.lineTo(17, 16);
   ctx.closePath(); ctx.fill();
+  // Stride: legs & boots slide horizontally and lift a hair per cycle.
+  const strideA = Math.sin(walkPhase) * 3.2;
+  const strideB = Math.sin(walkPhase + Math.PI) * 3.2;
+  const liftA = Math.max(0, Math.sin(walkPhase)) * 1.4;
+  const liftB = Math.max(0, Math.sin(walkPhase + Math.PI)) * 1.4;
   ctx.fillStyle = '#1e8449';
-  ctx.fillRect(5, 42, 6, 12);
-  ctx.fillRect(13, 42, 6, 12);
+  ctx.fillRect(5 + strideA, 42 - liftA, 6, 12);
+  ctx.fillRect(13 + strideB, 42 - liftB, 6, 12);
   ctx.fillStyle = '#146034';
-  ctx.fillRect(4, 50, 8, 5);
-  ctx.fillRect(12, 50, 8, 5);
+  ctx.fillRect(4 + strideA, 50 - liftA, 8, 5);
+  ctx.fillRect(12 + strideB, 50 - liftB, 8, 5);
   ctx.fillStyle = '#1e8449';
   ctx.fillRect(4, 37, 16, 6);
   ctx.fillStyle = '#cb2d20';
