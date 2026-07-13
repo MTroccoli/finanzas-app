@@ -19,6 +19,7 @@ let lastGrappleShotAt = -Infinity;
 function requestJump() { jumpBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 function requestShoot() { shootBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 function requestGrapple() { grappleBufferUntil = performance.now() + JUMP_BUFFER_MS; }
+function requestSmoke() { smokeBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 
 // Act 3 co-op: hot-swap Batman <-> Robin. The one you leave becomes the
 // companion that trails behind; the one you pick up gets the controls,
@@ -164,6 +165,7 @@ window.addEventListener('keydown', e => {
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = true;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
   if (['KeyZ', 'KeyC'].includes(e.code)) { keys.grapple = true; requestGrapple(); }
+  if (['KeyF', 'KeyB'].includes(e.code)) { keys.smoke = true; requestSmoke(); }
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = true;
   if (e.code === 'KeyR') restartGame();
   // co-op character swap (Act 3+)
@@ -177,6 +179,7 @@ window.addEventListener('keyup', e => {
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = false;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
   if (['KeyZ', 'KeyC'].includes(e.code)) keys.grapple = false;
+  if (['KeyF', 'KeyB'].includes(e.code)) keys.smoke = false;
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = false;
 });
 
@@ -198,6 +201,9 @@ bindButton('btn-jump', () => { keys.jump = true; requestJump(); }, () => keys.ju
 bindButton('btn-shoot', () => { keys.shoot = true; requestShoot(); }, () => keys.shoot = false);
 if (document.getElementById('btn-grapple')) {
   bindButton('btn-grapple', () => { keys.grapple = true; requestGrapple(); }, () => keys.grapple = false);
+}
+if (document.getElementById('btn-smoke')) {
+  bindButton('btn-smoke', () => { keys.smoke = true; requestSmoke(); }, () => keys.smoke = false);
 }
 // rope reel (batigarra): up contracts, down extends
 bindButton('btn-up', () => keys.up = true, () => keys.up = false);
@@ -342,6 +348,8 @@ const hud = {
   time: document.getElementById('hud-time'),
   ammo: document.getElementById('hud-ammo'),
   ammoWrap: document.getElementById('hud-ammo-wrap'),
+  smoke: document.getElementById('hud-smoke'),
+  smokeWrap: document.getElementById('hud-smoke-wrap'),
 };
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -397,9 +405,24 @@ function updateWeaponButton() {
     hud.ammoWrap.style.display = hasBatarang ? '' : 'none';
     if (hasBatarang) hud.ammo.textContent = batarangAmmo;
   }
+  // Smoke bomb — button + counter appear only once Batman owns it,
+  // regardless of which character is active (Robin shares the belt).
+  const hasSmoke = ownedGadgets.smoke;
+  const btnSmoke = document.getElementById('btn-smoke');
+  if (btnSmoke) {
+    btnSmoke.style.display = hasSmoke ? 'flex' : 'none';
+    btnSmoke.textContent = '💨';
+  }
+  if (hud.smokeWrap) {
+    hud.smokeWrap.style.display = hasSmoke ? '' : 'none';
+    if (hasSmoke) hud.smoke.textContent = smokeAmmo;
+  }
 }
 function updateAmmoHud() {
   if (hud.ammo && currentGadget === 'batarang') hud.ammo.textContent = batarangAmmo;
+}
+function updateSmokeHud() {
+  if (hud.smoke) hud.smoke.textContent = smokeAmmo;
 }
 
 let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover
@@ -431,7 +454,13 @@ let currentGadget = null;        // deprecated but kept for backward compat: mir
 // so choosing the batigarra after the batarang keeps BOTH — the choice
 // screen ACCUMULATES, it never replaces. Robin ignores this and always
 // carries the batarang.
-let ownedGadgets = { batarang: false, batigarra: false };
+let ownedGadgets = { batarang: false, batigarra: false, smoke: false };
+// Active smoke clouds on the level. Each: { x, y, r, born, life, phase }
+// phase = 'flight' while the bomb arcs, 'cloud' once it settles.
+let smokeClouds = [];
+let smokeAmmo = SMOKE_MAX_AMMO;
+let lastSmokeAt = 0;
+let smokeBufferUntil = 0;
 let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
 let caveHubReturn = false;       // player warped to the Batcave via the ⌂ button from Act 3+ (silent Alfred, skip news)
@@ -505,8 +534,92 @@ function setGadget(g) {
   }
 }
 function playerCanUse(gadget) {
+  // Smoke bomb is a UNIVERSAL secondary — once Batman picks it up in
+  // the Batcave, Robin can throw one too (they share the pouch).
+  if (gadget === 'smoke') return !!ownedGadgets.smoke && smokeAmmo > 0;
   if (activeChar === 'robin') return gadget === 'batarang';
   return !!ownedGadgets[gadget];
+}
+
+// --- Smoke bomb ---
+// The bomb lobs forward from the character's feet, arcs briefly
+// with gravity, and settles into a static cloud where it lands.
+// The cloud lasts SMOKE_DURATION_MS and applies a `confused` flag
+// to enemies inside — see updateSmokeClouds for the AoE tick.
+function spawnSmokeBomb(now) {
+  if (smokeAmmo <= 0) return;
+  smokeClouds.push({
+    x: player.x + player.w / 2,
+    y: player.y + player.h - 6,
+    vx: SMOKE_LOB_VX * player.facing,
+    vy: SMOKE_LOB_VY,
+    r: SMOKE_RADIUS,
+    born: now,
+    life: SMOKE_DURATION_MS,
+    phase: 'flight',
+    flightEnd: now + SMOKE_FLIGHT_MS,
+  });
+  smokeAmmo--;
+  updateSmokeHud();
+}
+
+function updateSmokeClouds(dt, now) {
+  for (const c of smokeClouds) {
+    if (c.phase === 'flight') {
+      c.vy += GRAVITY * dt * 0.6; // lighter than a snowball so it hangs a beat
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      // Settle when the arc timer runs out or it clips a solid tile.
+      const belowTile = Math.floor((c.y + 6) / TILE);
+      const colTile = Math.floor(c.x / TILE);
+      const hitFloor = isSolidTile(colTile, belowTile);
+      if (now >= c.flightEnd || hitFloor) {
+        c.phase = 'cloud';
+        c.settleAt = now;
+      }
+    } else {
+      // A settled cloud drifts gently upward as it dissipates.
+      c.y -= 0.05 * dt;
+    }
+    // Apply confusion + one-hit-kill flag to enemies inside the cloud.
+    if (c.phase === 'cloud') {
+      applySmokeConfusion(c, now);
+    }
+  }
+  const before = smokeClouds.length;
+  smokeClouds = smokeClouds.filter(c => now - c.born < c.life);
+  // When a cloud expires, clear its lingering confusion from enemies
+  // (they don't automatically un-confuse the moment they step out —
+  // the flag is refreshed each frame, so simply not touching them
+  // this frame lets it lapse).
+  if (smokeClouds.length !== before) {
+    for (const g of level.thugs || []) {
+      if (g.confusedUntil && now > g.confusedUntil) { g.confused = false; g.confusedUntil = 0; }
+    }
+    for (const b of level.birds || []) {
+      if (b.confusedUntil && now > b.confusedUntil) { b.confused = false; b.confusedUntil = 0; }
+    }
+  }
+}
+
+// Refresh a confusion flag on every enemy inside the cloud. Enemies
+// outside naturally lose it once its expiry timer passes.
+function applySmokeConfusion(cloud, now) {
+  const cx = cloud.x, cy = cloud.y, r2 = cloud.r * cloud.r;
+  const stamp = now + 200; // refreshed each frame → decays quickly on exit
+  const list = [];
+  if (level.thugs) list.push(...level.thugs);
+  if (level.birds) list.push(...level.birds);
+  if (level.mrfreeze && level.mrfreeze.birds) list.push(...level.mrfreeze.birds);
+  for (const e of list) {
+    if (!e.alive) continue;
+    const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+    const dx = ex - cx, dy = ey - cy;
+    if (dx * dx + dy * dy <= r2) {
+      e.confused = true;
+      e.confusedUntil = stamp;
+    }
+  }
 }
 
 function spawnBatarang() {
@@ -556,7 +669,13 @@ function updateBatarangs(dt) {
     for (const g of level.thugs) {
       if (!g.alive) continue;
       if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
-        if (g.helmet) {
+        // Confused enemies skip the helmet + frozen-thaw steps —
+        // one batarang kills them outright.
+        if (g.confused && b.type !== 'batigarra') {
+          g.alive = false;
+          score += 100;
+          hud.score.textContent = score;
+        } else if (g.helmet) {
           g.helmet = false;
         } else if (b.type !== 'batigarra') {
           if (g.frozen) {
@@ -582,7 +701,10 @@ function updateBatarangs(dt) {
       for (const bd of birdPool) {
         if (!bd.alive) continue;
         if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
-          if (bd.frozen) {
+          if (bd.confused) {
+            bd.alive = false;
+            score += 100;
+          } else if (bd.frozen) {
             bd.frozen = false;
             bd.vx = (bd.vx < 0 ? -1 : 1) * 1.7;
             score += 50;
@@ -966,6 +1088,8 @@ function startGame() {
     if (belt) {
       ownedGadgets.batarang = belt.batarang;
       ownedGadgets.batigarra = belt.batigarra;
+      ownedGadgets.smoke = !!belt.smoke;
+      if (ownedGadgets.smoke) smokeAmmo = SMOKE_MAX_AMMO;
       armored = belt.armored;
       if (armored) currentPowerState = 'big';
     }
@@ -1116,6 +1240,7 @@ function saveBeltState(name) {
       batarang: !!ownedGadgets.batarang,
       batigarra: !!ownedGadgets.batigarra,
       armored: !!armored,
+      smoke: !!ownedGadgets.smoke,
     }));
   } catch (e) {}
 }
@@ -1129,6 +1254,7 @@ function loadBeltState(name) {
       batarang: !!obj.batarang,
       batigarra: !!obj.batigarra,
       armored: !!obj.armored,
+      smoke: !!obj.smoke,
     };
   } catch (e) { return null; }
 }
@@ -1219,6 +1345,8 @@ async function submitName() {
     ownedGadgets.batarang = belt.batarang;
     ownedGadgets.batigarra = belt.batigarra;
     armored = belt.armored;
+    ownedGadgets.smoke = !!belt.smoke;
+    if (ownedGadgets.smoke) smokeAmmo = SMOKE_MAX_AMMO;
   }
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
@@ -2625,6 +2753,15 @@ function updatePlaying(dt) {
     lastGrappleShotAt = now;
     grappleBufferUntil = 0;
   }
+  // Smoke bomb: its OWN button + key so it stacks with the primary
+  // weapon (Batman can throw a batarang the same frame he tosses
+  // smoke).
+  if (!frozenLocked && now < smokeBufferUntil && playerCanUse('smoke') &&
+      now - lastSmokeAt > SMOKE_THROW_COOLDOWN_MS) {
+    spawnSmokeBomb(now);
+    lastSmokeAt = now;
+    smokeBufferUntil = 0;
+  }
 
   // fell into a pit
   if (player.y > level.pixelHeight + 60) {
@@ -2652,6 +2789,8 @@ function updatePlaying(dt) {
       bat.taken = true;
       setPowerState('big');
       if (player.gadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
+      // Smoke bombs refill on any bat pickup once the pouch is owned.
+      if (ownedGadgets.smoke) { smokeAmmo = SMOKE_MAX_AMMO; updateSmokeHud(); }
       score += BAT_SCORE;
       hud.score.textContent = score;
       // GENERAL RULE: every bat power-up is a checkpoint, in every
@@ -2661,11 +2800,19 @@ function updatePlaying(dt) {
   }
 
   updateBatarangs(dt);
+  updateSmokeClouds(dt, now);
 
   // thugs
   for (const g of level.thugs) {
     if (!g.alive) continue;
-    g.x += g.vx * dt;
+    // Confusion decay: if the last smoke tick was more than a frame
+    // ago, drop the flag. Refreshed live by applySmokeConfusion when
+    // still inside a cloud.
+    if (g.confused && (g.confusedUntil || 0) < now) {
+      g.confused = false;
+    }
+    const smokeMul = g.confused ? SMOKE_SPEED_MULT : 1;
+    g.x += g.vx * dt * smokeMul;
     if (g.x < g.minX) { g.x = g.minX; g.vx = Math.abs(g.vx); }
     if (g.x + g.w > g.maxX) { g.x = g.maxX - g.w; g.vx = -Math.abs(g.vx); }
     patrolWallBounce(g);
@@ -2674,9 +2821,15 @@ function updatePlaying(dt) {
       // Land vertically to count as a stomp. A helmet normally blocks
       // the killing stomp — but a FROZEN enemy always thaws first
       // (Batman lands on the snow cap, not the spikes), so the helmet
-      // gate only matters for warm enemies.
+      // gate only matters for warm enemies. CONFUSED enemies bypass
+      // both gates — the smoke leaves them wide open.
       const landing = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
-      if (landing && g.frozen) {
+      if (landing && g.confused) {
+        g.alive = false;
+        player.vy = STOMP_BOUNCE;
+        score += 100;
+        hud.score.textContent = score;
+      } else if (landing && g.frozen) {
         g.frozen = false;
         g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
         player.vy = STOMP_BOUNCE;
@@ -2697,7 +2850,9 @@ function updatePlaying(dt) {
   // birds
   for (const b of level.birds) {
     if (!b.alive) continue;
-    b.x += b.vx * dt;
+    if (b.confused && (b.confusedUntil || 0) < now) b.confused = false;
+    const smokeMul = b.confused ? SMOKE_SPEED_MULT : 1;
+    b.x += b.vx * dt * smokeMul;
     if (b.x < b.minX) { b.x = b.minX; b.vx = Math.abs(b.vx); }
     if (b.x + b.w > b.maxX) { b.x = b.maxX - b.w; b.vx = -Math.abs(b.vx); }
     b.y = b.baseY + Math.sin(now / 300 + b.x * 0.04) * 10;
@@ -2706,7 +2861,12 @@ function updatePlaying(dt) {
     if (aabbOverlap(player, b)) {
       const stomped = player.vy > 0 && (player.y + player.h - b.y) < STOMP_TOLERANCE;
       if (stomped) {
-        if (b.frozen) {
+        if (b.confused) {
+          b.alive = false;
+          player.vy = STOMP_BOUNCE;
+          score += 150;
+          hud.score.textContent = score;
+        } else if (b.frozen) {
           b.frozen = false;
           b.vx = (b.vx < 0 ? -1 : 1) * 1.7;
           player.vy = STOMP_BOUNCE;
@@ -4822,13 +4982,18 @@ function drawFreezeExpedienteScreen(now) {
 // item picked from the sub-menu (batarang / batigarra / armor). Slot
 // contents are derived from ownership in canonical display order so
 // the cursor / painter don't have to store their own state.
-const BELT_SLOTS = 2;
+// Bumped to 3 in Act 4 so the smoke bomb pouch can sit alongside
+// Batman's existing weapon + armor without forcing him to drop
+// one to pick it up. The 3rd slot only becomes visible in the
+// choice UI once there's actually a third accessory to place.
+const BELT_SLOTS = 3;
 
 function beltContents() {
   const out = [];
   if (ownedGadgets.batarang) out.push('batarang');
   if (ownedGadgets.batigarra) out.push('batigarra');
   if (armored) out.push('armor');
+  if (ownedGadgets.smoke) out.push('smoke');
   return out.slice(0, BELT_SLOTS);
 }
 
@@ -4849,6 +5014,7 @@ function availableAccessories() {
   if (!ownedGadgets.batarang) out.push('batarang');
   if (!ownedGadgets.batigarra) out.push('batigarra');
   if (!armored) out.push('armor');
+  if (!ownedGadgets.smoke) out.push('smoke');
   return out;
 }
 
@@ -4871,16 +5037,19 @@ function availableWeapons() {
 function accessoryIcon(kind) {
   return kind === 'batarang' ? '🪃'
        : kind === 'batigarra' ? '🪝'
+       : kind === 'smoke' ? '💨'
        : '🛡';
 }
 function accessoryLabel(kind) {
   return kind === 'batarang' ? 'BATARANG'
        : kind === 'batigarra' ? 'BATIGARRA'
+       : kind === 'smoke' ? 'BOMBA DE HUMO'
        : 'ARMADURA';
 }
 function accessoryColor(kind) {
   return kind === 'batarang' ? '#ffe066'
        : kind === 'batigarra' ? '#7fd4ff'
+       : kind === 'smoke' ? '#b0b7c8'
        : '#c95a3a';
 }
 
@@ -4946,6 +5115,22 @@ function drawBeltSlot(x, y, w, h, kind, selected) {
     ctx.beginPath(); ctx.moveTo(46, -35); ctx.quadraticCurveTo(38, -33, 40, -26); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(46, -35); ctx.quadraticCurveTo(54, -33, 52, -26); ctx.stroke();
     ctx.lineCap = 'butt';
+  } else if (kind === 'smoke') {
+    // Round grenade body with a fuse — reads as "bomba" clearly.
+    ctx.fillStyle = '#2b303c';
+    ctx.beginPath(); ctx.arc(0, 4, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a5162';
+    ctx.beginPath(); ctx.arc(-6, -2, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-4, -20, 8, 6);
+    ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -14); ctx.quadraticCurveTo(8, -22, 6, -30); ctx.stroke();
+    ctx.fillStyle = '#ffcf6b';
+    ctx.beginPath(); ctx.arc(6, -30, 3, 0, Math.PI * 2); ctx.fill();
+    // whisps of smoke rising
+    ctx.fillStyle = 'rgba(200,210,225,0.55)';
+    ctx.beginPath(); ctx.arc(14, -22, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(20, -14, 4, 0, Math.PI * 2); ctx.fill();
   } else {
     // armor
     ctx.fillStyle = c;
@@ -4977,6 +5162,7 @@ const ACCESSORY_LINES = {
   batarang: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'],
   batigarra: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'],
   armor:    ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'],
+  smoke:    ['Nube de humo confusora', 'Enemigos lentos y con 1 vida', '5 cargas, refill con murci'],
 };
 
 function drawAccessoryCard(kind, x, y, selected) {
@@ -5010,6 +5196,27 @@ function drawAccessoryCard(kind, x, y, selected) {
     ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(48, -45, 50, -34); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(72, -45, 70, -34); ctx.stroke();
     ctx.lineCap = 'butt';
+  } else if (kind === 'smoke') {
+    // Bigger grenade for the card + a fluffy smoke plume behind it.
+    ctx.fillStyle = 'rgba(200,210,225,0.55)';
+    for (let i = 0; i < 6; i++) {
+      const ang = i * Math.PI / 3;
+      ctx.beginPath();
+      ctx.arc(Math.cos(ang) * 22, Math.sin(ang) * 22 - 8, 14 - i, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(230,235,245,0.75)';
+    ctx.beginPath(); ctx.arc(-4, -6, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2b303c';
+    ctx.beginPath(); ctx.arc(0, 6, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a5162';
+    ctx.beginPath(); ctx.arc(-8, -2, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-5, -24, 10, 8);
+    ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -18); ctx.quadraticCurveTo(10, -30, 8, -40); ctx.stroke();
+    ctx.fillStyle = '#ffcf6b';
+    ctx.beginPath(); ctx.arc(8, -40, 4, 0, Math.PI * 2); ctx.fill();
   } else {
     ctx.fillStyle = c;
     ctx.beginPath();
@@ -5165,9 +5372,10 @@ function applyAccessoryToSlot(kind) {
     if (previous === 'armor') armored = false;
     else if (previous === 'batarang') ownedGadgets.batarang = false;
     else if (previous === 'batigarra') ownedGadgets.batigarra = false;
+    else if (previous === 'smoke') { ownedGadgets.smoke = false; smokeAmmo = 0; }
     // If Batman was actively using the tool we just removed, fall back
     // to whatever else he still owns so the on-screen controls sync.
-    if (previous !== 'armor' && currentGadget === previous) {
+    if (previous !== 'armor' && previous !== 'smoke' && currentGadget === previous) {
       const fallback = ownedGadgets.batarang ? 'batarang'
                      : ownedGadgets.batigarra ? 'batigarra'
                      : null;
@@ -5178,6 +5386,12 @@ function applyAccessoryToSlot(kind) {
   cv.weaponChosen = kind;
   if (kind === 'armor') {
     armored = true;
+  } else if (kind === 'smoke') {
+    // Smoke lives outside the primary gadget slot — set the ownership
+    // flag and refill the pouch, but don't rewire the fire button.
+    ownedGadgets.smoke = true;
+    smokeAmmo = SMOKE_MAX_AMMO;
+    updateSmokeHud();
   } else {
     setGadget(kind);
   }
@@ -6440,6 +6654,7 @@ function drawThugs() {
       ctx.fillRect(px + 2, gy + 10, 3, 2);
       ctx.fillRect(px + g.w - 5, gy + 12, 3, 2);
     }
+    if (g.confused) drawConfusedMarker(g);
   }
 }
 
@@ -6511,6 +6726,7 @@ function drawBirds(t) {
       ctx.fillRect(px + b.w * 0.35, cy - 2, 2, 2);
       ctx.fillRect(px + b.w * 0.6, cy - 2, 2, 2);
     }
+    if (b.confused) drawConfusedMarker(b);
   }
 }
 
@@ -7043,6 +7259,70 @@ function drawBats(t) {
     ctx.closePath();
     ctx.fill();
   }
+}
+
+// A settled smoke cloud reads as a soft radial puff with wispy
+// billows. While it's still in flight (mid-arc) we draw it much
+// smaller — a single tossed pellet with a short vapor trail.
+function drawSmokeClouds(t) {
+  const now = performance.now();
+  for (const c of smokeClouds) {
+    const px = c.x - camera.x;
+    const py = c.y - camera.y;
+    if (c.phase === 'flight') {
+      // Pellet: dark grey ball with a curling wisp behind.
+      ctx.fillStyle = '#4b4f5a';
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(200,200,210,0.5)';
+      for (let i = 0; i < 4; i++) {
+        const t2 = i * 0.25;
+        ctx.beginPath();
+        ctx.arc(px - c.vx * t2 * 3, py - c.vy * t2 * 3 + t2 * 8,
+                4 - t2 * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      continue;
+    }
+    // Settled cloud: layered puffs + fade over lifetime.
+    const age = (now - c.born) / c.life;
+    const grow = Math.min(1, (now - (c.settleAt || c.born)) / 260);
+    const r = c.r * grow;
+    const alpha = age < 0.75 ? 0.55 : 0.55 * (1 - (age - 0.75) / 0.25);
+    // Outer soft halo
+    const grad = ctx.createRadialGradient(px, py, 4, px, py, r);
+    grad.addColorStop(0, `rgba(210,215,225,${alpha})`);
+    grad.addColorStop(0.55, `rgba(150,155,170,${alpha * 0.75})`);
+    grad.addColorStop(1, 'rgba(80,85,95,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    // Puffs — a few offset circles for the "billowing" look, each
+    // gently rotating around the cloud center.
+    ctx.fillStyle = `rgba(230,232,240,${alpha * 0.85})`;
+    const puffs = 7;
+    for (let i = 0; i < puffs; i++) {
+      const ang = (i / puffs) * Math.PI * 2 + now / 900;
+      const pd = r * 0.55;
+      const pr = r * (0.32 + 0.1 * Math.sin(now / 300 + i));
+      ctx.beginPath();
+      ctx.arc(px + Math.cos(ang) * pd, py + Math.sin(ang) * pd, pr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Small yellow "?" hovering above a confused enemy — tells the
+// player the smoke landed and they can go in for the one-hit kill.
+function drawConfusedMarker(e) {
+  const px = e.x + e.w / 2 - camera.x;
+  const py = e.y - camera.y - 18;
+  const now = performance.now();
+  if (Math.floor(now / 220) % 2 === 0) return; // blink
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillText('?', px + 1, py + 1);
+  ctx.fillStyle = '#ffd166';
+  ctx.fillText('?', px, py);
 }
 
 function drawBatarangs() {
@@ -8793,6 +9073,7 @@ function render(t) {
   if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
   drawSnowballs(t);
+  drawSmokeClouds(t);
   drawVillain();
   drawBane(t);
   drawTwoFace(t);

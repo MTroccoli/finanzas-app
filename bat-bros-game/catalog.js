@@ -39,6 +39,20 @@ const BATARANG_SPEED = 7.5;
 const BATARANG_RANGE = 130;
 const BATARANG_LIFESPAN_MS = 3000;
 const BATARANG_MAX_AMMO = 5;
+
+// --- Smoke bomb (Act 4 gadget) ---
+// Deployed at the character's feet, spreads a circular cloud that
+// CONFUSES enemies inside it: they slow down and take a single hit
+// to kill. The heroes are immune (they can see through it and
+// keep full control).
+const SMOKE_MAX_AMMO = 5;            // matches the batarang for parity
+const SMOKE_RADIUS = 90;             // px around the poof center
+const SMOKE_DURATION_MS = 4500;      // cloud lifetime
+const SMOKE_SPEED_MULT = 0.4;        // confused enemies move at 40 % speed
+const SMOKE_THROW_COOLDOWN_MS = 350; // between smoke throws
+const SMOKE_LOB_VX = 4.2;            // horizontal launch speed (arcs like a snowball)
+const SMOKE_LOB_VY = -6.0;           // upward launch
+const SMOKE_FLIGHT_MS = 550;         // arc time before it settles into a cloud
 const BAT_SCORE = 2000;
 
 // --- Progression ---
