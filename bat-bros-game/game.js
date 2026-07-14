@@ -577,6 +577,25 @@ function updateCrouch() {
   }
 }
 
+// Which slide zone (if any) contains world-x px. Returns { dir } or null.
+function slideZoneAt(worldX) {
+  const zones = level.slideZones;
+  if (!zones || !zones.length) return null;
+  for (const z of zones) if (worldX >= z.x0 && worldX < z.x1) return z;
+  return null;
+}
+
+// Top solid surface Y (px) at a world-x column — used by sliding
+// penguins to hug the ramp. Returns the level bottom if no solid.
+function surfaceYAt(worldX) {
+  const tx = Math.floor(worldX / TILE);
+  if (tx < 0 || tx >= level.width) return level.pixelHeight;
+  for (let ty = 0; ty < level.height; ty++) {
+    if (level.solid[ty][tx]) return ty * TILE;
+  }
+  return level.pixelHeight;
+}
+
 // Reject a horizontal move if the destination would collide with a
 // solid tile — used by updateCrouch to check headroom above.
 function collidesAt(x, y, w, h) {
@@ -706,6 +725,90 @@ function updateDivers(dt, now) {
     } else {
       hurtPlayer();
       if (state !== 'playing') return;
+    }
+  }
+}
+
+// Sliding penguins (Act 4 ascent ramp): spawn at the top of a ramp
+// and slide downhill hugging the surface, accelerating. They damage
+// on contact; a dive-stomp kills them, and the player jumps over to
+// dodge. Not counted toward the level's kill requirement.
+function updateSliders(dt, now) {
+  const groups = level.sliders || [];
+  for (const g of groups) {
+    if (!g.nextAt) g.nextAt = now + 800 + Math.random() * g.interval;
+    if (now >= g.nextAt) {
+      g.list.push({
+        x: g.spawnX, y: surfaceYAt(g.spawnX) - 26,
+        w: 24, h: 26, vx: SLIDER_SPEED * g.dir, alive: true,
+      });
+      g.nextAt = now + g.interval;
+    }
+    for (const s of g.list) {
+      if (!s.alive) continue;
+      s.vx += SLIDER_ACCEL * g.dir * dt;
+      s.x += s.vx * dt;
+      // hug the ramp surface
+      s.y = surfaceYAt(s.x + s.w / 2) - s.h;
+      // player interaction
+      if (aabbOverlap(player, s)) {
+        const stomp = player.vy > 0 && (player.y + player.h - s.y) < STOMP_TOLERANCE + 4;
+        if (stomp) {
+          s.alive = false;
+          player.vy = STOMP_BOUNCE;
+          score += 120; hud.score.textContent = score;
+        } else if (Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+          hurtPlayer();
+          if (state !== 'playing') return;
+        }
+      }
+    }
+    // cull off-range sliders
+    g.list = g.list.filter(s => s.alive && s.x > g.minX - TILE && s.x < g.maxX + TILE);
+  }
+}
+
+function drawSliders(t) {
+  const groups = level.sliders || [];
+  const now = performance.now();
+  for (const g of groups) {
+    for (const s of g.list) {
+      if (!s.alive) continue;
+      const px = s.x - camera.x, py = s.y - camera.y;
+      if (px < -40 || px > CANVAS_W + 40) continue;
+      ctx.save();
+      ctx.translate(px + s.w / 2, py + s.h / 2);
+      // lean into the slide direction + belly-slide tilt
+      ctx.rotate((s.vx < 0 ? 0.5 : -0.5));
+      // body (black tuxedo penguin on its belly)
+      ctx.fillStyle = '#161a24';
+      ctx.beginPath(); ctx.ellipse(0, 2, 13, 10, 0, 0, Math.PI * 2); ctx.fill();
+      // white belly
+      ctx.fillStyle = '#f0f4f8';
+      ctx.beginPath(); ctx.ellipse(2, 4, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+      // head
+      ctx.fillStyle = '#161a24';
+      ctx.beginPath(); ctx.arc(-10, -2, 7, 0, Math.PI * 2); ctx.fill();
+      // beak
+      ctx.fillStyle = '#ff8c1f';
+      ctx.beginPath(); ctx.moveTo(-16, -2); ctx.lineTo(-22, 0); ctx.lineTo(-16, 2); ctx.closePath(); ctx.fill();
+      // eye
+      ctx.fillStyle = '#ffcf6b';
+      ctx.beginPath(); ctx.arc(-11, -4, 1.4, 0, Math.PI * 2); ctx.fill();
+      // flippers out behind
+      ctx.fillStyle = '#0e1218';
+      ctx.beginPath(); ctx.ellipse(8, 0, 5, 3, 0.4, 0, Math.PI * 2); ctx.fill();
+      // little feet
+      ctx.fillStyle = '#ff8c1f';
+      ctx.fillRect(6, 8, 4, 3); ctx.fillRect(11, 8, 4, 3);
+      ctx.restore();
+      // slide dust trail behind
+      ctx.fillStyle = 'rgba(200,230,210,0.4)';
+      for (let d = 1; d <= 3; d++) {
+        ctx.beginPath();
+        ctx.arc(px + s.w / 2 - s.vx * d * 2, py + s.h - 2, 3 - d * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
@@ -2957,8 +3060,27 @@ function updatePlaying(dt) {
     // inside a pipe) drops speed to 45 %: it should feel cramped.
     const iced = (player.frozenUntil || 0) > now;
     const crouched = !!player.crouching;
+    const pcx = player.x + player.w / 2;
+    // Over a slide zone at all (even mid-hop between staircase steps).
+    const overSlide = !crouched ? slideZoneAt(pcx) : null;
+    if (overSlide && player.onGround) {
+      // SLIPPERY RAMP: constant downhill pull, near-zero braking, and
+      // heavily damped input — you skid down and can only nudge left/
+      // right or jump to dodge. No stopping.
+      player.vx += overSlide.dir * SLIDE_ACCEL * dt;
+      const nudge = MOVE_ACCEL * SLIDE_INPUT_MUL;
+      if (keys.left && !keys.right) { player.vx -= nudge * dt; player.facing = -1; }
+      else if (keys.right && !keys.left) { player.vx += nudge * dt; player.facing = 1; }
+      player.vx *= SLIDE_FRICTION;
+      player.vx = Math.max(-SLIDE_MAX_SPEED, Math.min(SLIDE_MAX_SPEED, player.vx));
+      player.walkDist = (player.walkDist || 0) + Math.abs(player.vx) * dt;
+    } else {
     const accelMul = iced ? 0.4 : (crouched ? 0.45 : 1);
-    const speedCap = iced ? MAX_SPEED * 0.45
+    // Airborne over a slide ramp keeps the fast cap so the momentum
+    // from the skid carries through the little step-hops (otherwise
+    // the normal MAX_SPEED clamp would bleed it off every frame).
+    const speedCap = overSlide ? SLIDE_MAX_SPEED
+                          : iced ? MAX_SPEED * 0.45
                           : crouched ? MAX_SPEED * 0.45
                           : MAX_SPEED;
     const accel = (player.onGround ? MOVE_ACCEL : AIR_ACCEL) * accelMul;
@@ -2975,6 +3097,7 @@ function updatePlaying(dt) {
       if (Math.abs(player.vx) < 0.05) player.vx = 0;
     }
     player.vx = Math.max(-speedCap, Math.min(speedCap, player.vx));
+    }
 
     // walk-cycle distance: only advances while actually moving on the ground,
     // so the legs animate in step with real travel instead of just sliding
@@ -3101,6 +3224,7 @@ function updatePlaying(dt) {
   updateSmokeClouds(dt, now);
   updateCrouch();
   updateDrips(dt, now);
+  updateSliders(dt, now);
 
   // thugs
   for (const g of level.thugs) {
@@ -6470,6 +6594,29 @@ function drawSewerDecor(t) {
   const slitTop = (level.groundY - 1) * TILE - camera.y;   // crawl slit ceiling
   const slitH = floorY - slitTop;                          // 32 px opening
 
+  // Slippery ramp sheen: a glossy wet green wash over the surface of
+  // every slide ramp so the player reads "this skids". Painted on the
+  // top tile of each ramp column.
+  for (const r of (level.ramps || [])) {
+    if (!r.slide) continue;
+    for (let i = 0; i < r.w; i++) {
+      const frac = r.w <= 1 ? 0 : i / (r.w - 1);
+      const surf = Math.round(r.fromRow + (r.toRow - r.fromRow) * frac);
+      const gx = (r.x + i) * TILE - camera.x;
+      const gy = surf * TILE - camera.y;
+      if (gx < -TILE || gx > CANVAS_W) continue;
+      ctx.fillStyle = 'rgba(90,200,150,0.30)';
+      ctx.fillRect(gx, gy, TILE, 5);
+      ctx.fillStyle = 'rgba(200,255,220,0.45)';
+      ctx.fillRect(gx, gy, TILE, 2);
+      // moving glint streaks to sell the wetness
+      if ((Math.floor(now / 120) + i) % 4 === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(gx + 6, gy + 1, 8, 1);
+      }
+    }
+  }
+
   // Pipe mouths: elliptical metal rims at both ends of each ceiling
   // drop + a blinking arrow so it clearly reads as "crawl through here".
   for (const p of (level.pipes || [])) {
@@ -6531,13 +6678,10 @@ function drawSewerDecor(t) {
 function updateDrips(dt, now) {
   const drips = level.drips;
   if (!drips || !drips.length) return;
-  // drops start at the underside of the ceiling mass
-  const ceilY = ((level.ceilingRow != null ? level.ceilingRow : level.groundY - 2) + 1) * TILE;
-  const floorPx = level.groundY * TILE;
   for (const d of drips) {
     if (!d.nextAt) d.nextAt = now + 600 + Math.random() * d.interval;
     if (now >= d.nextAt) {
-      d.drops.push({ x: d.x, y: ceilY, vy: 0 });
+      d.drops.push({ x: d.x, y: d.ceilY, vy: 0 });
       d.nextAt = now + d.interval;
     }
     for (const drop of d.drops) {
@@ -6548,12 +6692,13 @@ function updateDrips(dt, now) {
         if (Math.abs((player.x + player.w / 2) - drop.x) < player.w / 2 + 5 &&
             drop.y > player.y && drop.y < player.y + player.h) {
           hurtPlayer();
-          drop.y = floorPx + 100; // consume it
+          drop.landed = true;
           if (state !== 'playing') return;
         }
       }
     }
-    d.drops = d.drops.filter(drop => drop.y < floorPx + 4);
+    // drops die when they hit the floor/ramp surface beneath them
+    d.drops = d.drops.filter(drop => !drop.landed && drop.y < surfaceYAt(drop.x) + 4);
   }
 }
 
@@ -6561,11 +6706,10 @@ function drawDrips(t) {
   const drips = level.drips;
   if (!drips || !drips.length) return;
   const now = performance.now();
-  const ceilY = ((level.ceilingRow != null ? level.ceilingRow : level.groundY - 2) + 1) * TILE - camera.y;
-  const floorY = level.groundY * TILE - camera.y;
   for (const d of drips) {
     const dx = d.x - camera.x;
     if (dx < -20 || dx > CANVAS_W + 20) continue;
+    const ceilY = d.ceilY - camera.y;
     // Swelling bead at the ceiling that pulses toward the next drop
     const untilNext = Math.max(0, (d.nextAt || 0) - now);
     const swell = 1 - Math.min(1, untilNext / 400);
@@ -6578,7 +6722,6 @@ function drawDrips(t) {
     // Falling droplets
     for (const drop of d.drops) {
       const py = drop.y - camera.y;
-      if (py < ceilY || py > floorY + 4) continue;
       // glowing acid blob + a faint trail
       ctx.fillStyle = 'rgba(140,220,74,0.35)';
       ctx.beginPath(); ctx.ellipse(dx, py - 6, 2, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -9903,6 +10046,7 @@ function render(t) {
   drawBirds(t);
   drawRats();
   drawDivers();
+  drawSliders(t);
   if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
   drawSnowballs(t);

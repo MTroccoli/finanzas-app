@@ -53,6 +53,15 @@ const SMOKE_THROW_COOLDOWN_MS = 350; // between smoke throws
 const SMOKE_LOB_VX = 4.2;            // horizontal launch speed (arcs like a snowball)
 const SMOKE_LOB_VY = -6.0;           // upward launch
 const SMOKE_FLIGHT_MS = 550;         // arc time before it settles into a cloud
+
+// --- Act 4 slippery ramps ---
+// On a slide ramp the player skids downhill with almost no braking.
+const SLIDE_ACCEL = 0.34;     // constant downhill pull per frame
+const SLIDE_FRICTION = 0.99;  // near-frictionless (vs 0.78 normal)
+const SLIDE_INPUT_MUL = 0.32; // horizontal input is heavily damped
+const SLIDE_MAX_SPEED = 7.2;  // faster than the normal 3.9 cap — out of control
+const SLIDER_SPEED = 2.0;     // base downhill speed of a sliding penguin
+const SLIDER_ACCEL = 0.05;    // it accelerates as it slides
 const BAT_SCORE = 2000;
 
 // --- Progression ---
@@ -187,6 +196,7 @@ function buildLevel(spec) {
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
           pipes = [], ceilingRow = null, drips = [], drains = [],
+          ramps = [], sliders = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
@@ -205,6 +215,26 @@ function buildLevel(spec) {
   if (ceilingRow != null) {
     for (let y = 0; y <= ceilingRow; y++) {
       for (let x = 0; x < width; x++) solid[y][x] = true;
+    }
+  }
+
+  // RAMPS (Act 4): diagonal floor built as a 1-tile staircase. Over
+  // columns [x, x+w) the surface row interpolates fromRow → toRow;
+  // everything below the surface is solid. A ramp with slide:true is
+  // slippery (see slideZones + game.js movement) so the player skids
+  // down without braking.
+  const slideZones = [];
+  for (const r of ramps) {
+    for (let i = 0; i < r.w; i++) {
+      const frac = r.w <= 1 ? 0 : i / (r.w - 1);
+      const surf = Math.round(r.fromRow + (r.toRow - r.fromRow) * frac);
+      for (let y = surf; y < height; y++) solid[y][r.x + i] = true;
+    }
+    if (r.slide) {
+      slideZones.push({
+        x0: r.x * TILE, x1: (r.x + r.w) * TILE,
+        dir: Math.sign(r.toRow - r.fromRow) || 1,  // +1 = downhill to the right
+      });
     }
   }
 
@@ -283,14 +313,30 @@ function buildLevel(spec) {
     // damage the player on contact. Built with live droplet state.
     drips: drips.map(d => {
       const dx = (typeof d === 'number' ? d : d.x);
+      // Start row: explicit d.y, else just below the ceiling mass,
+      // else one row above the floor.
+      const dyRow = (typeof d === 'object' && d.y != null) ? d.y
+                  : (ceilingRow != null ? ceilingRow + 1 : groundY - 1);
       return {
         x: dx * TILE + TILE / 2,
+        ceilY: dyRow * TILE,
         interval: (typeof d === 'object' && d.interval) ? d.interval : 1800,
         nextAt: 0, drops: [],
       };
     }),
     // Floor drain grates (pure decor).
     drains: drains.map(dx => (typeof dx === 'number' ? dx : dx.x) * TILE + TILE / 2),
+    // Slippery ramp zones (world-px X ranges + downhill sign).
+    slideZones,
+    ramps: ramps.map(r => ({ x: r.x, w: r.w, fromRow: r.fromRow, toRow: r.toRow, slide: !!r.slide })),
+    // Sliding penguins: spawn at a column, slide downhill following
+    // the ramp surface, damage on contact (stompable, jumpable).
+    sliders: sliders.map(s => ({
+      spawnX: s.x * TILE, dir: s.dir ?? -1,
+      interval: s.interval ?? 2200,
+      nextAt: 0, list: [],
+      minX: (s.minX ?? 0) * TILE, maxX: (s.maxX ?? width) * TILE,
+    })),
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),

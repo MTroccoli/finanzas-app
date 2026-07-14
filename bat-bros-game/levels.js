@@ -804,4 +804,74 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 9 },
 });
 
+// 4-2 — LA RAMPA. Un gran tobogán de cloaca: bajás una rampa
+// RESBALADIZA (patinás sin frenar, esquivando obstáculos),
+// llegás a una poza de descanso, y trepás una rampa de subida
+// mientras pingüinos se deslizan hacia vos y hay que saltarlos.
+// Gotas de ácido tóxico caen todo el tiempo desde arriba.
+LEVEL_SPECS.push({
+  name: '4-2',
+  sewer: true,
+  width: 84, height: 20, groundY: 18,
+  pits: [],
+  // Perfil del piso construido con rampas (escalera de 1 tile
+  // pintada como pendiente). La de bajada es slide:true = patina.
+  ramps: [
+    { x: 0,  w: 10, fromRow: 5,  toRow: 5 },               // meseta inicial
+    { x: 10, w: 20, fromRow: 5,  toRow: 16, slide: true }, // BAJADA resbaladiza ↘
+    { x: 30, w: 14, fromRow: 16, toRow: 16 },              // poza / descanso
+    { x: 44, w: 20, fromRow: 16, toRow: 5 },               // SUBIDA (se controla) ↗
+    { x: 64, w: 20, fromRow: 5,  toRow: 5 },               // meseta final / salida
+  ],
+  platforms: [],
+  walls: [],
+  ladders: [],
+  houses: [],
+  pipes: [],
+  // Pingüinos deslizantes: nacen arriba de la rampa de subida y
+  // bajan hacia el jugador. Se los salta (o se los pisa). No
+  // cuentan para el 80%.
+  sliders: [
+    { x: 62, dir: -1, interval: 1900, minX: 44, maxX: 64 },
+    { x: 63, dir: -1, interval: 2600, minX: 44, maxX: 64 },
+  ],
+  // Gotas de ácido tóxico cayendo desde el techo alto de la cloaca.
+  drips: [
+    { x: 14, y: 2, interval: 1500 },   // sobre la bajada
+    { x: 20, y: 3, interval: 1300 },
+    { x: 26, y: 2, interval: 1600 },
+    { x: 36, y: 3, interval: 1400 },   // sobre la poza
+    { x: 50, y: 2, interval: 1500 },   // sobre la subida
+    { x: 56, y: 3, interval: 1300 },
+    { x: 70, y: 2, interval: 1600 },   // meseta final
+  ],
+  drains: [5, 36, 40, 70],
+  swingPoints: [],
+  coins: [
+    [4, 4], [7, 4],
+    [13, 6], [17, 9], [21, 11], [25, 14],   // bajando la rampa
+    [33, 15], [38, 15], [42, 15],            // poza
+    [47, 14], [51, 11], [55, 9], [59, 6],    // subiendo la rampa
+    [67, 4], [72, 4], [78, 4],               // salida
+  ],
+  thugs: [
+    // Uno en la meseta inicial (combate previo a la bajada).
+    { x: 7, y: 5, range: [4, 9] },
+  ],
+  rats: [
+    // Obstáculos EN la bajada (los saltás mientras patinás).
+    { x: 16, y: 8, range: [15, 17] },
+    { x: 22, y: 11, range: [21, 23] },
+    // Poza: patrullan la zona de descanso.
+    { x: 34, y: 16, range: [31, 40] },
+    { x: 39, y: 16, range: [35, 43], dir: -1 },
+    // Meseta final.
+    { x: 71, y: 5, range: [66, 76] },
+  ],
+  divers: [],
+  birds: [],
+  bats: [[36, 15]],   // checkpoint en la poza
+  spawn: { x: 3, y: 3 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
