@@ -313,7 +313,12 @@ if (swapBtnEl) {
 }
 function updateCaveButtonVisibility() {
   if (!caveBtnEl) return;
-  const show = level && level.name && level.name.startsWith('3-');
+  // GENERAL RULE: from Act 3 onward (any level whose name starts with
+  // '3-' or higher), the ⌂ BATICUEVA and ⇄ swap buttons stay visible.
+  // Never hidden on regular gameplay levels — Act 3+ is co-op with a
+  // hub warp always reachable.
+  const firstChar = level && level.name ? parseInt(level.name.charAt(0), 10) : 0;
+  const show = firstChar >= 3;
   caveBtnEl.style.display = show ? 'block' : 'none';
   if (swapBtnEl) {
     swapBtnEl.style.display = show ? 'block' : 'none';
@@ -463,6 +468,7 @@ let lastSmokeAt = 0;
 let smokeBufferUntil = 0;
 let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
+let postFreezeReturn = false;    // routed back to the Batcave after 3-4; unlocks the Act 3 → 4 choice screen
 let caveHubReturn = false;       // player warped to the Batcave via the ⌂ button from Act 3+ (silent Alfred, skip news)
 let lastPlayedLevel = 0;         // remembered so Batcave door returns Batman to whichever level he was actually on
 // Persist "beat Two-Face" so Continue from a fresh page reload also
@@ -472,6 +478,12 @@ function saveAct2Beaten() {
 }
 function loadAct2Beaten() {
   try { return localStorage.getItem('bitbros:act2beaten') === '1'; } catch (e) { return false; }
+}
+function saveAct3Beaten() {
+  try { localStorage.setItem('bitbros:act3beaten', '1'); } catch (e) {}
+}
+function loadAct3Beaten() {
+  try { return localStorage.getItem('bitbros:act3beaten') === '1'; } catch (e) { return false; }
 }
 let rescueStart = 0;             // performance.now() when the 2-4 rescue cutscene began
 let alfredStart = 0;             // performance.now() when Alfred's news cutscene began
@@ -501,8 +513,82 @@ function newPlayer(spawn, powerState = 'small', gadget = null) {
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
     swingMinR: null,
     climbing: false, // on a dock ladder
+    crouching: false, // Act 4: down key on ground shrinks to fit under low tunnels
+    fullH: size.h,   // remembered so we can restore height when uncrouching
     walkDist: 0,
   };
+}
+
+// Shrunk hitbox when crouched — small enough to fit under a
+// tunnel with only 1 tile of vertical clearance.
+const CROUCH_H = 20;
+
+// Try to make the player crouch. On the ground and pressing down =
+// crouch. Off the ground or no down input = try to uncrouch (only
+// works if the space above the head is clear).
+function updateCrouch() {
+  if (!player) return;
+  const wantCrouch = player.onGround && keys.down && !player.climbing && !player.swinging;
+  if (wantCrouch && !player.crouching) {
+    const dropH = player.h - CROUCH_H;
+    player.h = CROUCH_H;
+    player.y += dropH; // keep feet planted while shrinking downward
+    player.crouching = true;
+    return;
+  }
+  if (!wantCrouch && player.crouching) {
+    // Restore full height only if nothing solid is directly above.
+    const restoreH = (player.fullH || SIZES[player.powerState].h);
+    const risenY = player.y - (restoreH - CROUCH_H);
+    if (!collidesAt(player.x, risenY, player.w, restoreH)) {
+      player.y = risenY;
+      player.h = restoreH;
+      player.crouching = false;
+    }
+  }
+}
+
+// Standing characters can't enter a crouch tunnel — the ceiling
+// tile at ceilRow blocks big Batman (h=40) but small (h=30) and
+// Robin can technically fit under it. To keep the "must crouch"
+// gate consistent for every character, we also push a STANDING
+// player back to the tunnel edge if he crosses in.
+function enforceCrouchTunnels() {
+  const tunnels = level.crouchTunnels;
+  if (!tunnels || !tunnels.length || player.crouching) return;
+  for (const t of tunnels) {
+    const tx0 = t.x * TILE, tx1 = (t.x + t.w) * TILE;
+    const ceilPx = (t.ceilRow + 1) * TILE;
+    // Player must actually be "below" the ceiling row to count as
+    // inside the tunnel — a jump over it doesn't get pushed back.
+    if (player.y < ceilPx - player.h - 4) continue;
+    if (player.x + player.w <= tx0 || player.x >= tx1) continue;
+    // Push to whichever edge is closer.
+    const pcx = player.x + player.w / 2;
+    if (pcx < (tx0 + tx1) / 2) {
+      player.x = tx0 - player.w;
+    } else {
+      player.x = tx1;
+    }
+    player.vx = 0;
+  }
+}
+
+// Reject a horizontal move if the destination would collide with a
+// solid tile — used by updateCrouch to check headroom above.
+function collidesAt(x, y, w, h) {
+  const l = Math.floor(x / TILE);
+  const r = Math.floor((x + w - 1) / TILE);
+  const tp = Math.floor(y / TILE);
+  const bt = Math.floor((y + h - 1) / TILE);
+  for (let ty = tp; ty <= bt; ty++) {
+    if (ty < 0 || ty >= level.solid.length) continue;
+    for (let tx = l; tx <= r; tx++) {
+      if (tx < 0 || tx >= level.solid[ty].length) continue;
+      if (level.solid[ty][tx]) return true;
+    }
+  }
+  return false;
 }
 
 // Health only (small <-> big). Never touches the gadget.
@@ -512,6 +598,8 @@ function setPowerState(newState) {
   const size = SIZES[newState];
   player.w = size.w;
   player.h = size.h;
+  player.fullH = size.h;
+  player.crouching = false;
   player.y += oldH - size.h; // keep feet planted when growing/shrinking
   player.powerState = newState;
   currentPowerState = newState;
@@ -1123,9 +1211,12 @@ function loadLevel(idx) {
   // On a Batcave HUB visit (Act 3+ ⌂ button), Alfred is silent and the
   // Batcomputer skips the news, going straight to the current-act
   // expediente.
-  if (level.cave && postTwoFaceReturn) {
+  if (level.cave && (postTwoFaceReturn || postFreezeReturn)) {
     const cv = level.cave;
     cv.act2Return = true;
+    // Post-3-4 arrivals want the Penguin dialog + expediente, so tag
+    // which villain's aftermath we're staging.
+    cv.postAct = postFreezeReturn ? 'freeze' : 'twoface';
     cv.alfred = {
       x: cv.computerX - 220,
       y: cv.plateauY - 66, // shoes rest exactly on the plateau top
@@ -1139,11 +1230,14 @@ function loadLevel(idx) {
       walkPhase: 0,
     };
     cv.tvOn = false;
-    // widen the level-select carousel so Batman can replay Act 2 levels
-    // from the entrance door — not just Act 1
+    // Widen the level-select carousel to include every act the player
+    // has already reached, up to the current one.
+    const actFilter = postFreezeReturn
+      ? (n => /^[1-3]-/.test(n))
+      : (n => /^[1-2]-/.test(n));
     cv.replayOptions = [
       ...LEVEL_SPECS.map((s, i) => ({ i, name: s.name }))
-        .filter(o => /^1-/.test(o.name) || /^2-/.test(o.name)),
+        .filter(o => actFilter(o.name)),
       { i: -1, name: 'SEGUIR' },
     ];
   }
@@ -1180,6 +1274,7 @@ function startGame() {
   caveHubReturn = false;
   ownedGadgets = { batarang: false, batigarra: false };
   postTwoFaceReturn = loadAct2Beaten();
+  postFreezeReturn = loadAct3Beaten();
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
   if (currentGadget) ownedGadgets[currentGadget] = true;
@@ -2020,79 +2115,67 @@ function completeLevel() {
 }
 
 // Total length of the Penguin-reveal cutscene (ms). After it
-// finishes, we auto-load level 4-1.
-const PENGUIN_REVEAL_MS = 6500;
+// finishes we route Batman through the Baticueva so Alfred can
+// hand over the smoke pouch and the Batcomputer can swap to the
+// Penguin expediente. Same flow the Two-Face rescue uses.
+const PENGUIN_REVEAL_MS = 5500;
 let penguinRevealStart = 0;
 
-// Render the cutscene overlay: the frozen arena stays in the
-// background, a purple umbrella + monocle drops on the floor
-// where Freeze fell, and Alfred narrates the twist across the
-// bottom.
+// Text-only cutscene overlay — no umbrella / monocle graphics
+// (they were too on-the-nose). Alfred narrates the twist over
+// the melting Freeze arena; a subtle vignette darkens the edges.
 function drawPenguinRevealOverlay() {
   const now = performance.now();
   const t = Math.min(1, (now - penguinRevealStart) / PENGUIN_REVEAL_MS);
-  ctx.fillStyle = `rgba(0,0,0,${0.35 + 0.15 * t})`;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  // Vignette: darker at the edges, mostly transparent in the middle
+  // so the Freeze arena stays visible behind Alfred's words.
+  const vg = ctx.createRadialGradient(CANVAS_W/2, CANVAS_H/2, 60,
+                                       CANVAS_W/2, CANVAS_H/2, 480);
+  vg.addColorStop(0, 'rgba(0,0,0,0.15)');
+  vg.addColorStop(1, `rgba(0,0,0,${0.65 + 0.15 * t})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Purple umbrella + monocle prop
-  const px = CANVAS_W / 2, py = CANVAS_H * 0.52;
-  const drop = Math.min(1, (now - penguinRevealStart) / 900);
-  const uy = py - 80 + 80 * drop;
-  ctx.save();
-  ctx.translate(px, uy);
-  ctx.rotate(-0.35);
-  // umbrella dome
-  ctx.fillStyle = '#5a2d8c';
-  ctx.beginPath();
-  ctx.moveTo(-46, 0); ctx.quadraticCurveTo(0, -46, 46, 0);
-  ctx.closePath(); ctx.fill();
-  // seams
-  ctx.strokeStyle = '#3d1e63'; ctx.lineWidth = 2;
-  for (let i = -3; i <= 3; i++) {
-    ctx.beginPath();
-    ctx.moveTo(0, -46 * (1 - Math.abs(i) / 4));
-    ctx.lineTo(i * 12, 0);
-    ctx.stroke();
-  }
-  // handle (crescent / bat-shape, like Cobblepot's)
-  ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 60); ctx.stroke();
-  ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(-6, 66, 6, 0, Math.PI); ctx.stroke();
-  ctx.restore();
-
-  // Monocle next to the umbrella
-  const mx = px + 90, my = py + 20;
-  ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(mx, my, 14, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,207,107,0.4)';
-  ctx.beginPath(); ctx.moveTo(mx + 10, my + 10); ctx.lineTo(mx + 40, my + 40); ctx.stroke();
-
-  // Alfred voiceover box at the bottom
-  const boxY = CANVAS_H - 100;
-  ctx.fillStyle = 'rgba(6,10,16,0.85)';
-  ctx.fillRect(30, boxY, CANVAS_W - 60, 78);
+  // Alfred voiceover box at the bottom (a bit taller — this is the
+  // only story beat now).
+  const boxY = CANVAS_H - 130;
+  ctx.fillStyle = 'rgba(6,10,16,0.9)';
+  ctx.fillRect(30, boxY, CANVAS_W - 60, 108);
   ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
-  ctx.strokeRect(30, boxY, CANVAS_W - 60, 78);
+  ctx.strokeRect(30, boxY, CANVAS_W - 60, 108);
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('ALFRED', 46, boxY + 20);
+  ctx.fillText('ALFRED', 46, boxY + 22);
   ctx.fillStyle = '#e6f1ff'; ctx.font = '13px monospace';
-  const line = (idx, s) => ctx.fillText(s, 46, boxY + 40 + idx * 16);
-  line(0, 'Amo Bruce... Freeze no actuaba solo. Un paraguas y un monóculo,');
-  line(1, 'y un rastro que baja a las cloacas. Le dejo el pack de bombas de humo:');
-  line(2, 'donde va el Pingüino, mejor no ir a los tiros.');
+  const line = (idx, s) => ctx.fillText(s, 46, boxY + 44 + idx * 18);
+  line(0, 'Amo Bruce... Freeze no actuaba solo. Alguien le pagaba con');
+  line(1, 'promesas y con paraguas. El rastro baja a las cloacas.');
+  line(2, 'Vuelva a la Baticueva — traigo bombas de humo y un expediente.');
 
-  // Auto-advance after PENGUIN_REVEAL_MS
+  // Tap-to-skip hint
+  const blink = Math.floor(now / 400) % 2 === 0;
+  if (blink) {
+    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText('▶ TAP / SALTAR PARA CONTINUAR', CANVAS_W - 46, boxY + 100);
+  }
+
+  // Auto-advance: route to the Baticueva so the expediente + choice
+  // screen fire the same way as post-Two-Face. postFreezeReturn is
+  // persisted so a Continue also lands in the cave, not straight at
+  // 4-1.
   if (t >= 1) {
     penguinRevealStart = 0;
-    // Load 4-1 directly.
-    const idx41 = LEVEL_SPECS.findIndex(s => s.name === '4-1');
-    if (idx41 >= 0) {
-      loadLevel(idx41);
+    postFreezeReturn = true;
+    saveAct3Beaten();
+    // Fresh post-3-4 arrival: no HUB return — Alfred talks, then
+    // Batcomputer opens straight into the Penguin expediente.
+    caveHubReturn = false;
+    const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
+    if (caveIdx >= 0) {
+      loadLevel(caveIdx);
       state = 'playing';
     } else {
-      state = 'levelcomplete';
-      stateTimer = 1000;
+      // Fallback: if there's no cave for some reason, drop into 4-1.
+      const idx41 = LEVEL_SPECS.findIndex(s => s.name === '4-1');
+      if (idx41 >= 0) { loadLevel(idx41); state = 'playing'; }
     }
   }
 }
@@ -2997,6 +3080,8 @@ function updatePlaying(dt) {
 
   updateBatarangs(dt);
   updateSmokeClouds(dt, now);
+  updateCrouch();
+  enforceCrouchTunnels();
 
   // thugs
   for (const g of level.thugs) {
@@ -3847,16 +3932,19 @@ function update(dt) {
       // actually playing. On a FRESH post-2-4 arrival — the first time
       // — kick off Act 3 with 3-1. Falls through to level+1 otherwise
       // (Act 1 -> Act 2 flow).
-      if (level && level.cave && postTwoFaceReturn) {
+      if (level && level.cave && (postTwoFaceReturn || postFreezeReturn)) {
         if (caveHubReturn && lastPlayedLevel && !LEVEL_SPECS[lastPlayedLevel].cave) {
           caveHubReturn = false;
           loadLevel(lastPlayedLevel);
           state = 'playing';
           return;
         }
-        const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
-        if (idx31 >= 0) {
-          loadLevel(idx31);
+        // Act boundary: postFreezeReturn takes priority (Act 4 opens),
+        // otherwise fall to postTwoFaceReturn (Act 3 opens).
+        const targetName = postFreezeReturn ? '4-1' : '3-1';
+        const targetIdx = LEVEL_SPECS.findIndex(s => s.name === targetName);
+        if (targetIdx >= 0) {
+          loadLevel(targetIdx);
           state = 'playing';
           return;
         }
@@ -5142,15 +5230,19 @@ function drawFreezeExpedienteScreen(now) {
   ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
   ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: Mr. FREEZE', x + 18, y + 25);
+  // Post-Freeze: swap header + portrait + facts to reveal Cobblepot.
+  const showPenguin = postFreezeReturn;
+  ctx.fillText(showPenguin
+    ? 'BATCOMPUTADORA — EXPEDIENTE: EL PINGÜINO'
+    : 'BATCOMPUTADORA — EXPEDIENTE: Mr. FREEZE', x + 18, y + 25);
 
-  // Mr. Freeze portrait — the executor
   ctx.save();
   ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
-  drawFreezePortrait(ctx);
+  if (showPenguin) drawPenguinPortrait(ctx);
+  else drawFreezePortrait(ctx);
   ctx.restore();
 
-  const lines = [
+  const freezeLines = [
     ['> IDENTIDAD: DR. VICTOR FRIES — CIENTÍFICO', '#bfe3ff'],
     ['> ALIAS: Mr. FREEZE — TRAJE CRIOGÉNICO', '#bfe3ff'],
     ['> M.O.: CAÑÓN QUE CONGELA TODO A -40°C', '#ff5e5e'],
@@ -5159,6 +5251,16 @@ function drawFreezeExpedienteScreen(now) {
     ['> COMPAÑERO: ROBIN — DÚO EN GOTHAM', '#ffd166'],
     ['► RUTA: BATICUEVA → CENTRO · ACTO 3', '#29d985'],
   ];
+  const penguinLines = [
+    ['> IDENTIDAD: OSWALD COBBLEPOT', '#bfe3ff'],
+    ['> ALIAS: EL PINGÜINO — SASTRE Y MAFIOSO', '#bfe3ff'],
+    ['> M.O.: PARAGUAS-ARMA, SECUACES ANFIBIOS', '#ff5e5e'],
+    ['> BASE: ICEBERG LOUNGE (cloacas conexas)', '#c95a3a'],
+    ['> PAGABA A FREEZE — motivo aún sin claro', '#ff5e5e'],
+    ['> COMPAÑERO: ROBIN — DÚO EN GOTHAM', '#ffd166'],
+    ['► RUTA: BATICUEVA → CLOACAS · ACTO 4', '#29d985'],
+  ];
+  const lines = showPenguin ? penguinLines : freezeLines;
   ctx.font = '12px monospace'; ctx.textAlign = 'left';
   lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
 
@@ -5173,7 +5275,7 @@ function drawFreezeExpedienteScreen(now) {
   ctx.font = 'bold 14px monospace';
   ctx.fillText(`GAME OVERS: ${gameOverCount}`, boxX + boxW - 10, boxY + 30);
   ctx.fillStyle = '#29d985'; ctx.textAlign = 'left'; ctx.font = '11px monospace';
-  ctx.fillText(`ACTO 3 · VIDAS: ${lives} · DÚO OPERATIVO`, boxX + 10, boxY + 54);
+  ctx.fillText(`ACTO ${postFreezeReturn ? '4' : '3'} · VIDAS: ${lives} · DÚO OPERATIVO`, boxX + 10, boxY + 54);
   ctx.textAlign = 'left';
 
   const blink = Math.floor(now / 400) % 2 === 0;
@@ -6298,6 +6400,45 @@ function drawLadders() {
 
 // Docks: shipping-container towers instead of brick apartment buildings.
 // Same solid collision as any other wall — this is purely the look.
+// Sewer wall: a chunky stone block Batman can climb, not a Gotham
+// warehouse. Made of mossy grey bricks with a slime-green roof cap
+// so it reads as underground infrastructure, not a building.
+function drawSewerBlock(w, x0, wpx, roofY, groundPx) {
+  const H = groundPx - roofY;
+  // main stone body
+  ctx.fillStyle = '#33403a';
+  ctx.fillRect(x0, roofY, wpx, H);
+  // brick joints (staggered rows)
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1;
+  const brickH = 12;
+  for (let y = roofY + brickH; y < groundPx; y += brickH) {
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + wpx, y); ctx.stroke();
+  }
+  const brickW = 28;
+  for (let y = roofY; y < groundPx; y += brickH) {
+    const row = Math.floor((y - roofY) / brickH);
+    const off = (row % 2) * (brickW / 2);
+    for (let bx = x0 + off; bx < x0 + wpx; bx += brickW) {
+      ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx, y + brickH); ctx.stroke();
+    }
+  }
+  // moss / algae streaks
+  ctx.fillStyle = 'rgba(90,160,110,0.28)';
+  for (let i = 0; i < wpx; i += 26) {
+    const dh = 4 + hash01(w.x * 3.1 + i * 0.7) * (H - 8);
+    ctx.fillRect(x0 + i + 3, roofY, 3, dh);
+  }
+  // dark base shadow — merges into the ground
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(x0, groundPx - 4, wpx, 4);
+  // slime-green roof cap so it doesn't look like a rooftop
+  ctx.fillStyle = '#2c5040';
+  ctx.fillRect(x0, roofY, wpx, 5);
+  ctx.fillStyle = '#3f6a52';
+  ctx.fillRect(x0, roofY, wpx, 2);
+}
+
 function drawContainerTower(w, x0, wpx, roofY, groundPx) {
   const bandH = TILE * 2;
   // Wider palette so stacked bands in the same yard read as
@@ -6356,6 +6497,7 @@ function drawWalls(t) {
     const H = groundPx - roofY;
 
     if (level.dock) { drawContainerTower(w, x0, wpx, roofY, groundPx); continue; }
+    if (level.sewer) { drawSewerBlock(w, x0, wpx, roofY, groundPx); continue; }
 
     // brick facade
     ctx.fillStyle = '#5a4238';
@@ -7033,6 +7175,20 @@ function drawPlayerRobin(t) {
     drawFrozenOverlay(px, py, player.w, player.h);
     return;
   }
+  // Crouch: squash the whole draw vertically around the feet — same
+  // trick as Batman uses. Anchored at the feet so the sprite stays
+  // planted on the ground.
+  let squashActive = false;
+  if (player.crouching) {
+    ctx.save();
+    const feetY = player.y + player.h - camera.y;
+    const fullH = player.fullH || SIZES[player.powerState].h;
+    const sy = player.h / fullH;
+    ctx.translate(0, feetY);
+    ctx.scale(1, sy);
+    ctx.translate(0, -feetY);
+    squashActive = true;
+  }
   // somersault rotation for Robin's double jump
   const somer = player.somersaultUntil && performance.now() < player.somersaultUntil
     ? (performance.now() - (player.somersaultUntil - 400)) / 400 : 0;
@@ -7040,13 +7196,19 @@ function drawPlayerRobin(t) {
   // rule as Batman: no walking-in-place while airborne or idle.
   const moving = player.onGround && Math.abs(player.vx) > 0.3;
   const walkPhase = moving ? (player.walkDist || 0) / 6 : 0;
+  // Draw at the FULL height when crouched so the squash transform
+  // (opened above) does all the compression. Anchor at feet, not
+  // hitbox center, so the pose lines up.
+  const drawH = player.crouching ? (player.fullH || SIZES[player.powerState].h) : player.h;
+  const feetY = py + player.h;
   ctx.save();
-  ctx.translate(px + player.w / 2, py + player.h / 2);
+  ctx.translate(px + player.w / 2, feetY - drawH / 2);
   if (somer > 0) ctx.rotate(somer * Math.PI * 2);
   if (flipX) ctx.scale(-1, 1);
-  ctx.translate(-12, -player.h / 2);
-  drawRobinSprite(0, 0, player.h / 55, false, 0, walkPhase);
+  ctx.translate(-12, -drawH / 2);
+  drawRobinSprite(0, 0, drawH / 55, false, 0, walkPhase);
   ctx.restore();
+  if (squashActive) ctx.restore();
 
   drawFrozenOverlay(px, py, player.w, player.h);
 }
@@ -7134,7 +7296,12 @@ function drawPlayer() {
   if (activeChar === 'robin') { drawPlayerRobin(performance.now()); return; }
   if (Date.now() < invulnUntil && Math.floor(Date.now() / 100) % 2 === 0) return;
   const px = player.x - camera.x;
-  const w = player.w, h = player.h;
+  // Crouch: draw the sprite at its FULL height but squash it
+  // vertically so it hunches under the low ceiling. Feet stay
+  // planted because we squash from the bottom.
+  const crouched = player.crouching;
+  const fullH = crouched ? (player.fullH || SIZES[player.powerState].h) : player.h;
+  const w = player.w, h = fullH;
   const cowlH = 10, faceH = 8, shoesH = 6;
   const bodyTop = cowlH + faceH - 1;
   const suitH = h - bodyTop;
@@ -7143,6 +7310,18 @@ function drawPlayer() {
   if (player.climbing) {
     drawPlayerClimbing(px, w, h, cowlH, faceH, bodyTop, suitH, shoesH);
     return;
+  }
+  // When crouched, apply a global vertical squash around the feet
+  // for the whole draw block below. Everything else stays the same.
+  let squashActive = false;
+  if (crouched) {
+    ctx.save();
+    const feetY = player.y + player.h - camera.y;
+    const sy = player.h / fullH;
+    ctx.translate(0, feetY);
+    ctx.scale(1, sy);
+    ctx.translate(0, -feetY);
+    squashActive = true;
   }
 
   // walk-cycle: driven by distance travelled (not time), so the legs and a
@@ -7157,7 +7336,12 @@ function drawPlayer() {
   const liftB = moving ? Math.max(0, Math.sin(walkPhase + Math.PI)) * 2 : 0;
 
   ctx.save();
-  ctx.translate(px + w / 2, player.y - camera.y);
+  // Anchor at the sprite top. When crouched we draw at full sprite
+  // height, so the anchor sits at (feet - fullH) instead of player.y.
+  const spriteTopY = (crouched
+    ? player.y + player.h - h - camera.y
+    : player.y - camera.y);
+  ctx.translate(px + w / 2, spriteTopY);
   ctx.scale(player.facing, 1);
   ctx.translate(-w / 2, -bodyBob);
 
@@ -7233,6 +7417,11 @@ function drawPlayer() {
   ctx.fillRect(w - 9 + strideB, h - shoesH - liftB, 8, shoesH);
 
   ctx.restore();
+
+  // If we opened a crouch-squash transform at the top of drawPlayer,
+  // close it before the overlay so the frozen box wraps the real
+  // hitbox (not the stretched one).
+  if (squashActive) ctx.restore();
 
   // Shared frozen wash so Robin and Batman both show it — see
   // drawFrozenOverlay above drawPlayerRobin.
@@ -9217,7 +9406,7 @@ function drawAlfredNewsScene(now) {
 function drawAlfredDialog(now) {
   const cv = level.cave;
   const page = cv && cv.alfred ? cv.alfred.dialogPage : 0;
-  const lines = [
+  const freezeLines = [
     ['ALFRED', '—¿Han visto las noticias, señores?'],
     ['ALFRED', '—Gotham amaneció bajo un manto de hielo.'],
     ['ALFRED', '—Mr. Freeze salió del Arkham y congela lo que toca.'],
@@ -9225,6 +9414,15 @@ function drawAlfredDialog(now) {
     ['ALFRED', '—Alguien le paga con promesas... y con paraguas.'],
     ['ALFRED', '—A la Batcomputadora — averigüemos quién mueve los hilos.'],
   ];
+  const penguinLines = [
+    ['ALFRED', '—Bienvenidos de vuelta. Freeze cayó, pero el hilo no.'],
+    ['ALFRED', '—El paraguas y el monóculo no son casualidad.'],
+    ['ALFRED', '—Cobblepot dirigió la operación desde el Iceberg Lounge.'],
+    ['ALFRED', '—La entrada real está por las cloacas de Gotham.'],
+    ['ALFRED', '—Les preparé un lote de bombas de humo — les vendrán bien.'],
+    ['ALFRED', '—A la Batcomputadora: expediente del Pingüino. Al acto 4.'],
+  ];
+  const lines = cv && cv.postAct === 'freeze' ? penguinLines : freezeLines;
   const [who, text] = lines[Math.min(page, lines.length - 1)];
 
   ctx.fillStyle = 'rgba(2,4,10,0.35)';

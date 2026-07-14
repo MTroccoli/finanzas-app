@@ -736,69 +736,64 @@ LEVEL_SPECS.push({
 // verdosa, ratas y esbirros que Cobblepot manda emerger del agua.
 // ==============================================================
 
-// 4-1 — ALCANTARILLAS INICIALES. Introducción del acto: un
-// túnel horizontal amplio con dos canales de agua y las primeras
-// ratas. Ritmo suave, sin trampas nuevas más que la propia bomba
-// de humo (que ya arranca equipada).
+// 4-1 — ALCANTARILLAS INICIALES. Ritmo alternado: dos zonas de
+// descanso donde patrullan ratas, dos tuberías bajas por las que
+// Batman está obligado a pasar agachado (down + caminar), y dos
+// canales con pingüinos-buzo que saltan mientras cruzás. La
+// primera tubería es corta para que se sienta la mecánica; la
+// segunda pasa POR ENCIMA de un canal con pingüinos saltando.
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
-  width: 88, height: 22, groundY: 19,
-  pits: [[22, 28], [58, 66]],   // dos canales de agua
-  platforms: [
-    // Tapa de alcantarilla a modo de plataforma flotante para saltar
-    // entre canales.
-    { x: 40, y: 15, w: 3 },
-    { x: 74, y: 16, w: 2 },
-  ],
-  walls: [
-    // Losa de ladrillo que separa dos tramos del túnel: obliga a
-    // trepar la escalerita o saltar sobre las tapas.
-    { x: 32, w: 2, topRow: 15 },
-    { x: 50, w: 3, topRow: 14 },
-    { x: 68, w: 2, topRow: 16 },
-  ],
-  ladders: [
-    { x: 31, topRow: 15, baseRow: 19 },
-    { x: 51, topRow: 14, baseRow: 19 },
-    { x: 69, topRow: 16, baseRow: 19 },
-  ],
+  width: 100, height: 22, groundY: 19,
+  pits: [[38, 44], [68, 76]],   // dos canales de agua
+  platforms: [],
+  walls: [],
+  ladders: [],
   houses: [],
+  // Las tuberías obligan a agacharse: fila de tiles sólidos a
+  // ceilRow=17 (dos filas sobre el suelo). Batman grande no pasa
+  // parado; agachado (h=20) sí.
+  crouchTunnels: [
+    // Túnel 1 — corto, seco: aprendés a agacharte con down + walk.
+    { x: 22, w: 8, ceilRow: 17 },
+    // Túnel 2 — largo, cruza por encima del canal 2. Los divers
+    // saltan mientras vos vas agachado abajo del tubo.
+    { x: 66, w: 12, ceilRow: 17 },
+  ],
   swingPoints: [
-    // Tubo de desagüe roto sirviendo de anclaje para la batigarra
-    // sobre cada canal.
-    [25, 13],
-    [61, 12],
+    [41, 12],   // sobre canal 1 para el que quiera usar batigarra
   ],
   coins: [
-    [5, 18], [8, 18], [14, 18], [18, 18],
-    [25, 13], [26, 13],   // arriba del canal 1
-    [37, 14], [41, 14],
-    [45, 18], [48, 18],
-    [61, 12], [62, 12],   // arriba del canal 2
-    [74, 15],
-    [80, 18], [84, 18],
+    [5, 18], [8, 18], [12, 18], [16, 18],
+    [22, 18], [26, 18],   // dentro del primer túnel (recompensa por agacharse)
+    [34, 18], [36, 18],   // zona de descanso 1
+    [50, 18], [54, 18], [58, 18],  // zona de descanso 2 (ratas)
+    [67, 18], [71, 18], [75, 18],  // dentro del túnel 2 (peligro divers)
+    [80, 18], [85, 18], [90, 18], [95, 18],   // salida
   ],
   thugs: [
-    // Un par de secuaces del Pingüino patrullando pasillos secos.
+    // Solo uno al comienzo para no saturar la intro.
     { x: 15, y: 19, range: [12, 18] },
-    { x: 45, y: 19, range: [43, 48] },
-    { x: 80, y: 19, range: [77, 84] },
   ],
   rats: [
-    // Ratas rápidas — la primera intro sirve para que el jugador
-    // aprenda que corren más rápido que un thug.
-    { x: 34, y: 19, range: [34, 40], dir: 1 },
-    { x: 52, y: 19, range: [52, 57] },
-    { x: 78, y: 19, range: [72, 82] },
+    // Rest zone 1 (entre túneles): dos ratas patrullando.
+    { x: 32, y: 19, range: [30, 37] },
+    { x: 51, y: 19, range: [46, 55] },
+    // Rest zone 2 (después del túnel largo): dos más.
+    { x: 82, y: 19, range: [80, 88], dir: -1 },
+    { x: 93, y: 19, range: [90, 97] },
   ],
   divers: [
-    // Pingüinos-buzo saltando del centro de cada canal
-    { x: 25, y: 19, interval: 2400, height: 5 },
-    { x: 62, y: 19, interval: 2800, height: 6 },
+    // Un pingüino-buzo saltando en el primer canal (fácil de esquivar)
+    { x: 41, y: 19, interval: 2400, height: 5 },
+    // Y dos más en el segundo canal, sincopados, mientras cruzás
+    // agachado por el túnel de arriba.
+    { x: 70, y: 19, interval: 2200, height: 5 },
+    { x: 74, y: 19, interval: 2600, height: 5 },
   ],
   birds: [],
-  bats: [[41, 14]],   // checkpoint entre canales
+  bats: [[59, 18]],   // checkpoint entre el rest zone 2 y el túnel 2
   spawn: { x: 2, y: 17 },
 });
 

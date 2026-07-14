@@ -186,6 +186,7 @@ function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
+          crouchTunnels = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
@@ -216,6 +217,16 @@ function buildLevel(spec) {
 
   for (const l of ladders) {
     solid[l.topRow][l.x] = true;
+  }
+
+  // Crouch tunnels: a low ceiling strip forces the player to crouch
+  // to pass. Each entry paints one row of solid tiles at ceilRow so
+  // the normal collision grid stops a standing character; a crouched
+  // character (h ~= 22) squeezes through the remaining gap.
+  for (const c of crouchTunnels) {
+    for (let i = 0; i < c.w; i++) {
+      solid[c.ceilRow][c.x + i] = true;
+    }
   }
 
   const builtCranes = cranes.map(c => ({
@@ -253,6 +264,7 @@ function buildLevel(spec) {
     name,
     width, height, groundY, indoor, dock, frozen, sewer,
     solid,
+    crouchTunnels: crouchTunnels.map(c => ({ x: c.x, w: c.w, ceilRow: c.ceilRow })),
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
