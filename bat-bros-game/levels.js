@@ -833,11 +833,12 @@ LEVEL_SPECS.push({
   houses: [],
   pipes: [],
   // Pingüinos deslizantes: nacen arriba de la rampa de subida y
-  // bajan por la diagonal hacia el jugador. Se saltan (o se pisan).
+  // bajan por la diagonal hacia el jugador. UN SOLO emisor con una
+  // única frecuencia constante → todos bajan al mismo ritmo, bien
+  // espaciados y sincronizados (no aleatorio). Se saltan o se pisan.
   // No cuentan para el 80%.
   sliders: [
-    { x: 60, dir: -1, interval: 1900, minX: 42, maxX: 62 },
-    { x: 61, dir: -1, interval: 2600, minX: 42, maxX: 62 },
+    { x: 60, dir: -1, interval: 2400, minX: 42, maxX: 62 },
   ],
   // Gotas de ácido tóxico saliendo de bocas de tubería en el techo
   // del tubo (dripCeilY sigue el techo diagonal). Pocas y espaciadas.
