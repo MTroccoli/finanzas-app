@@ -791,7 +791,7 @@ LEVEL_SPECS.push({
   puddles: [12, 34, 55, 70],
 
   swingPoints: [
-    [44, 14],                                // al ras del techo de Piso 2, visible como poste
+    [43, 17],                                // dentro del corredor Piso 2, alcanzable al saltar desde borde del hueco
   ],
 
   sewerPit: { floor: 1, from: 40, to: 47 }, // hueco en Piso 2 (requiere gancho o doble salto)
@@ -808,15 +808,21 @@ LEVEL_SPECS.push({
   thugs: [],
 
   rats: [
-    { x: 36, y: 23, range: [30, 39] },       // Piso 2 izquierda — para ANTES del hueco
+    { x: 10, y: 10, range: [4, 18] },         // Piso 1 izquierda — primer obstáculo
+    { x: 36, y: 23, range: [30, 39] },        // Piso 2 izquierda — para ANTES del hueco
     { x: 52, y: 23, range: [48, 56] },        // Piso 2 derecha — empieza DESPUÉS del hueco
+    { x: 60, y: 23, range: [57, 66] },        // Piso 2 derecha — más presión
     { x: 70, y: 10, range: [62, 77] },        // Piso 1 derecha
   ],
 
   sewerBats: [
-    { x: 18, y: 4, range: [10, 26] },        // Piso 1 izquierda
+    { x: 18, y: 7, range: [10, 26] },        // Piso 1 izquierda — alcanzable con salto
     { x: 44, y: 17, range: [35, 54] },       // Piso 2 (vuela sobre el hueco)
-    { x: 68, y: 4, range: [60, 76] },        // Piso 1 derecha
+    { x: 68, y: 7, range: [60, 76] },        // Piso 1 derecha — alcanzable con salto
+  ],
+
+  boats: [
+    { x: 41, y: 23, w: 3, range: [40, 46], speed: 0.8 },   // balsa de escombros flotando en el agua del hueco
   ],
 
   divers: [],

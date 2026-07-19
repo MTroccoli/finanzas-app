@@ -347,6 +347,7 @@ function buildLevel(spec) {
     width, height, groundY, indoor, dock, frozen, sewer,
     ceilingRow,
     sewerFloors: sewerFloors ? sewerFloors.map(f => ({ top: f.top, bottom: f.bottom, style: f.style || 'victorian' })) : null,
+    sewerPit: sewerPit ? { floor: sewerPit.floor, from: sewerPit.from, to: sewerPit.to } : null,
     sewerWalls: sewerWalls.map(sw => ({ x: sw.x * TILE, w: (sw.w || 1) * TILE, top: sw.top * TILE, bottom: (sw.bottom + 1) * TILE })),
     solid,
     // Pipe descriptors in TILE units. A pipe is a ceiling drop to

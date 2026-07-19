@@ -6560,46 +6560,75 @@ function drawBoats(t) {
     if (x0 + boat.w < -20 || x0 > CANVAS_W + 20) continue;
     const bob = Math.sin(t / 260 + boat.x * 0.01) * 1.5;
     const by = y0 + bob;
-    const bowDir = boat.vx > 0 ? 1 : -1;
-    const bowX = bowDir > 0 ? x0 + boat.w : x0;
-    const sternX = bowDir > 0 ? x0 : x0 + boat.w;
-    ctx.fillStyle = '#4a3518';
-    ctx.beginPath();
-    ctx.moveTo(sternX - bowDir * 4, by + boat.h);
-    ctx.lineTo(sternX, by);
-    ctx.lineTo(bowX, by);
-    ctx.lineTo(bowX + bowDir * 18, by + boat.h * 0.35);
-    ctx.lineTo(bowX + bowDir * 6, by + boat.h);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#6b4f2e';
-    ctx.fillRect(x0, by, boat.w, 3);
-    ctx.strokeStyle = '#3a2a12'; ctx.lineWidth = 1;
-    ctx.strokeRect(x0, by, boat.w, boat.h);
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
-    for (let px = 12; px < boat.w - 4; px += 16) {
-      ctx.beginPath(); ctx.moveTo(x0 + px, by + 3); ctx.lineTo(x0 + px, by + boat.h - 1); ctx.stroke();
-    }
-    const cabinX = bowDir > 0 ? x0 + 4 : x0 + boat.w - 22;
-    ctx.fillStyle = '#5a4020';
-    ctx.fillRect(cabinX, by - 8, 18, 8);
-    ctx.fillStyle = '#3a2a12';
-    ctx.fillRect(cabinX, by - 9, 18, 2);
-    ctx.fillStyle = 'rgba(180,220,255,0.4)';
-    ctx.fillRect(cabinX + 4, by - 6, 4, 3);
-    ctx.fillRect(cabinX + 10, by - 6, 4, 3);
-    const railX1 = bowDir > 0 ? x0 + 24 : x0;
-    const railX2 = bowDir > 0 ? x0 + boat.w - 2 : x0 + boat.w - 26;
-    ctx.strokeStyle = '#6b5030'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(railX1, by - 4); ctx.lineTo(railX2, by - 4); ctx.stroke();
-    for (let rx = railX1; rx <= railX2; rx += 10) {
-      ctx.beginPath(); ctx.moveTo(rx, by); ctx.lineTo(rx, by - 4); ctx.stroke();
-    }
-    ctx.strokeStyle = 'rgba(180,220,255,0.3)'; ctx.lineWidth = 1;
-    const wakeX = bowX + bowDir * 16;
-    for (let i = 0; i < 3; i++) {
-      const wy = by + boat.h * 0.35 + i * 4;
-      ctx.beginPath(); ctx.moveTo(wakeX, wy); ctx.lineTo(wakeX + bowDir * (10 - i * 3), wy + 2); ctx.stroke();
+    if (level.sewer) {
+      // Sewer debris raft: planks, barrel, and slime
+      ctx.fillStyle = '#3a3028';
+      ctx.fillRect(x0 - 4, by + 2, boat.w + 8, boat.h - 2);
+      ctx.fillStyle = '#5a4a38';
+      ctx.fillRect(x0, by, boat.w, boat.h * 0.6);
+      ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 1;
+      for (let px = 8; px < boat.w - 4; px += 14) {
+        ctx.beginPath(); ctx.moveTo(x0 + px, by); ctx.lineTo(x0 + px, by + boat.h * 0.6); ctx.stroke();
+      }
+      // Barrel on the raft
+      const bx = x0 + boat.w * 0.6;
+      ctx.fillStyle = '#6a4020';
+      ctx.beginPath(); ctx.ellipse(bx, by - 4, 8, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#3a2a14'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(bx, by - 4, 8, 10, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#8a6a40'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(bx - 8, by - 7); ctx.lineTo(bx + 8, by - 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx - 8, by - 1); ctx.lineTo(bx + 8, by - 1); ctx.stroke();
+      // Green slime dripping off edges
+      ctx.fillStyle = 'rgba(80,140,70,0.5)';
+      ctx.fillRect(x0 - 2, by + boat.h - 4, 6, 4);
+      ctx.fillRect(x0 + boat.w - 6, by + boat.h - 4, 6, 4);
+      // Murky water ripples around raft
+      ctx.strokeStyle = 'rgba(60,90,50,0.4)'; ctx.lineWidth = 0.8;
+      const rOff = Math.sin(t / 300 + boat.x * 0.02) * 3;
+      ctx.beginPath(); ctx.moveTo(x0 - 10, by + boat.h + rOff); ctx.quadraticCurveTo(x0 + boat.w / 2, by + boat.h + 4 + rOff, x0 + boat.w + 10, by + boat.h + rOff); ctx.stroke();
+    } else {
+      const bowDir = boat.vx > 0 ? 1 : -1;
+      const bowX = bowDir > 0 ? x0 + boat.w : x0;
+      const sternX = bowDir > 0 ? x0 : x0 + boat.w;
+      ctx.fillStyle = '#4a3518';
+      ctx.beginPath();
+      ctx.moveTo(sternX - bowDir * 4, by + boat.h);
+      ctx.lineTo(sternX, by);
+      ctx.lineTo(bowX, by);
+      ctx.lineTo(bowX + bowDir * 18, by + boat.h * 0.35);
+      ctx.lineTo(bowX + bowDir * 6, by + boat.h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#6b4f2e';
+      ctx.fillRect(x0, by, boat.w, 3);
+      ctx.strokeStyle = '#3a2a12'; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, by, boat.w, boat.h);
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+      for (let px = 12; px < boat.w - 4; px += 16) {
+        ctx.beginPath(); ctx.moveTo(x0 + px, by + 3); ctx.lineTo(x0 + px, by + boat.h - 1); ctx.stroke();
+      }
+      const cabinX = bowDir > 0 ? x0 + 4 : x0 + boat.w - 22;
+      ctx.fillStyle = '#5a4020';
+      ctx.fillRect(cabinX, by - 8, 18, 8);
+      ctx.fillStyle = '#3a2a12';
+      ctx.fillRect(cabinX, by - 9, 18, 2);
+      ctx.fillStyle = 'rgba(180,220,255,0.4)';
+      ctx.fillRect(cabinX + 4, by - 6, 4, 3);
+      ctx.fillRect(cabinX + 10, by - 6, 4, 3);
+      const railX1 = bowDir > 0 ? x0 + 24 : x0;
+      const railX2 = bowDir > 0 ? x0 + boat.w - 2 : x0 + boat.w - 26;
+      ctx.strokeStyle = '#6b5030'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(railX1, by - 4); ctx.lineTo(railX2, by - 4); ctx.stroke();
+      for (let rx = railX1; rx <= railX2; rx += 10) {
+        ctx.beginPath(); ctx.moveTo(rx, by); ctx.lineTo(rx, by - 4); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(180,220,255,0.3)'; ctx.lineWidth = 1;
+      const wakeX = bowX + bowDir * 16;
+      for (let i = 0; i < 3; i++) {
+        const wy = by + boat.h * 0.35 + i * 4;
+        ctx.beginPath(); ctx.moveTo(wakeX, wy); ctx.lineTo(wakeX + bowDir * (10 - i * 3), wy + 2); ctx.stroke();
+      }
     }
   }
 }
@@ -6922,20 +6951,40 @@ function drawSewerDecor(t) {
   // Floor-level details for multi-floor sewer: green slime strip, amber
   // reflections below grates, and puddles with animated ripples.
   if (level.sewerFloors) {
-    for (const f of level.sewerFloors) {
+    for (let fi = 0; fi < level.sewerFloors.length; fi++) {
+      const f = level.sewerFloors[fi];
       const floorSurfY = (f.bottom + 1) * TILE - camera.y;
       if (floorSurfY < -20 || floorSurfY > CANVAS_H + 20) continue;
-      // Green slime strip on floor top edge
+      const pitFrom = level.sewerPit && level.sewerPit.floor === fi ? level.sewerPit.from : -1;
+      const pitTo = level.sewerPit && level.sewerPit.floor === fi ? level.sewerPit.to : -1;
+      // Green slime strip on floor top edge — skip pit columns
       ctx.fillStyle = '#4a7a52';
-      ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 3);
-      ctx.fillStyle = '#6a9a6c';
-      ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 1);
-      // Wet reflection on floor surface
+      if (pitFrom >= 0) {
+        const px0 = pitFrom * TILE - camera.x;
+        const px1 = pitTo * TILE - camera.x;
+        if (px0 > 0) ctx.fillRect(0, floorSurfY - 3, px0, 3);
+        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY - 3, CANVAS_W - px1, 3);
+        ctx.fillStyle = '#6a9a6c';
+        if (px0 > 0) ctx.fillRect(0, floorSurfY - 3, px0, 1);
+        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY - 3, CANVAS_W - px1, 1);
+      } else {
+        ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 3);
+        ctx.fillStyle = '#6a9a6c';
+        ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 1);
+      }
+      // Wet reflection on floor surface — also skip pit
       const wetG = ctx.createLinearGradient(0, floorSurfY, 0, floorSurfY + 20);
       wetG.addColorStop(0, 'rgba(100,130,80,0.12)');
       wetG.addColorStop(1, 'rgba(100,130,80,0)');
       ctx.fillStyle = wetG;
-      ctx.fillRect(0, floorSurfY, CANVAS_W, 20);
+      if (pitFrom >= 0) {
+        const px0 = pitFrom * TILE - camera.x;
+        const px1 = pitTo * TILE - camera.x;
+        if (px0 > 0) ctx.fillRect(0, floorSurfY, px0, 20);
+        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY, CANVAS_W - px1, 20);
+      } else {
+        ctx.fillRect(0, floorSurfY, CANVAS_W, 20);
+      }
     }
 
     // Floor amber reflections below ceiling grates
