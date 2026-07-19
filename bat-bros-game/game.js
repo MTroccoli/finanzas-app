@@ -7496,21 +7496,24 @@ function drawSwingPoints(t) {
     const px = sp.x - camera.x;
     if (px < -30 || px > CANVAS_W + 30) continue;
     const ay = sp.y - camera.y;
-    if (level.indoor || level.cave) {
+    if (level.indoor || level.cave || level.sewer) {
       // warehouse / cave: a glowing grapple hook chained to the roof.
       // A manual (press-to-latch) hook glows cyan and pulses harder to read
       // as "press JUMP here".
       const manual = sp.manual;
       const core = manual ? '150,230,255' : '255,224,150';
       const ring = manual ? '#8fe0ff' : '#ffe096';
-      ctx.strokeStyle = level.cave ? '#2a3350' : '#4a4136';
+      const chainColor = level.cave ? '#2a3350' : level.sewer ? '#4a3a28' : '#4a4136';
+      const bracketColor = level.cave ? '#1b2338' : level.sewer ? '#3a2c1e' : '#2f2721';
+      const chainTopY = level.sewer ? ceilingYAt(sp.x) - camera.y : 40 - camera.y;
+      ctx.strokeStyle = chainColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(px, 40 - camera.y);
+      ctx.moveTo(px, chainTopY);
       ctx.lineTo(px, ay);
       ctx.stroke();
-      ctx.fillStyle = level.cave ? '#1b2338' : '#2f2721';
-      ctx.fillRect(px - 9, 36 - camera.y, 18, 6);
+      ctx.fillStyle = bracketColor;
+      ctx.fillRect(px - 9, chainTopY - 2, 18, 6);
       const hookGlow = 0.6 + 0.4 * Math.abs(Math.sin(t / (manual ? 300 : 500) + sp.x));
       const rad = manual ? 26 : 22;
       const hg = ctx.createRadialGradient(px, ay, 2, px, ay, rad);

@@ -744,29 +744,31 @@ LEVEL_SPECS.push({
 // el paso directo: hay que BAJAR por la escalera, atravesar el
 // piso 2, y SUBIR por otra escalera al lado correcto.
 //
-// Estructura vertical (25 filas):
-//   0-2  masa sólida (techo general)
-//   3-7  PISO 1 — corredor abierto (servicio)
-//   8-15 masa sólida (separación entre pisos)
-//  16-20 PISO 2 — corredor abierto (bóveda victoriana)
-//  21-24 masa sólida (base)
+// Estructura vertical (25 filas) — corredores AMPLIOS de 9 filas
+// para que el fondo victoriano (tuberías, arcos, válvulas, musgo)
+// sea protagonista:
+//   0     masa sólida (techo fino)
+//   1-9   PISO 1 — corredor abierto (servicio)
+//  10-13  masa sólida (separación entre pisos)
+//  14-22  PISO 2 — corredor abierto (bóveda victoriana)
+//  23-24  masa sólida (base)
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
-  width: 80, height: 25, groundY: 21,
+  width: 80, height: 25, groundY: 23,
 
   sewerFloors: [
-    { top: 3, bottom: 7, style: 'service' },
-    { top: 16, bottom: 20, style: 'victorian' },
+    { top: 1, bottom: 9, style: 'service' },
+    { top: 14, bottom: 22, style: 'victorian' },
   ],
 
   sewerWalls: [
-    { x: 38, top: 3, bottom: 7, w: 3 },    // bloquea paso directo en Piso 1
+    { x: 38, top: 1, bottom: 9, w: 3 },     // bloquea paso directo en Piso 1
   ],
 
   ladders: [
-    { x: 28, topRow: 8, baseRow: 21 },      // baja de Piso 1 a Piso 2
-    { x: 58, topRow: 8, baseRow: 21 },       // sube de Piso 2 a Piso 1
+    { x: 28, topRow: 10, baseRow: 23 },      // baja de Piso 1 a Piso 2
+    { x: 58, topRow: 10, baseRow: 23 },       // sube de Piso 2 a Piso 1
   ],
 
   pits: [],
@@ -776,12 +778,12 @@ LEVEL_SPECS.push({
   pipes: [],
 
   drips: [
-    { x: 12, y: 3, interval: 1800 },        // Piso 1
-    { x: 22, y: 3, interval: 1600 },        // Piso 1
-    { x: 35, y: 16, interval: 1500 },       // Piso 2
-    { x: 48, y: 16, interval: 1400 },       // Piso 2
-    { x: 65, y: 3, interval: 1700 },        // Piso 1 (tras subir)
-    { x: 75, y: 3, interval: 1500 },        // Piso 1
+    { x: 12, y: 1, interval: 1800 },         // Piso 1
+    { x: 22, y: 1, interval: 1600 },         // Piso 1
+    { x: 35, y: 14, interval: 1500 },        // Piso 2
+    { x: 48, y: 14, interval: 1400 },        // Piso 2
+    { x: 65, y: 1, interval: 1700 },         // Piso 1 (tras subir)
+    { x: 75, y: 1, interval: 1500 },         // Piso 1
   ],
 
   drains: [8, 25, 45, 65, 75],
@@ -789,39 +791,39 @@ LEVEL_SPECS.push({
   puddles: [12, 34, 55, 70],
 
   swingPoints: [
-    [44, 15],                                // mid-shaft swing (requires grapple to cross Floor 2 pit)
+    [44, 14],                                // al ras del techo de Piso 2, visible como poste
   ],
 
-  sewerPit: { floor: 1, from: 40, to: 47 }, // gap carved in Floor 2 only (7 tiles wide)
+  sewerPit: { floor: 1, from: 40, to: 47 }, // hueco en Piso 2 (requiere gancho o doble salto)
 
   coins: [
     // Piso 1 — sección izquierda (antes del muro)
-    [5, 6], [10, 6], [15, 6], [20, 6], [25, 6],
-    // Piso 2 — travesía completa
-    [32, 19], [37, 19], [42, 19], [47, 19], [53, 19],
+    [5, 8], [10, 8], [15, 8], [20, 8], [25, 8],
+    // Piso 2 — izquierda del hueco + derecha del hueco
+    [32, 21], [37, 21], [49, 21], [53, 21],
     // Piso 1 — sección derecha (después del muro)
-    [62, 6], [67, 6], [72, 6], [76, 6],
+    [62, 8], [67, 8], [72, 8], [76, 8],
   ],
 
   thugs: [],
 
   rats: [
-    { x: 36, y: 21, range: [30, 44] },      // Piso 2 izquierda
-    { x: 50, y: 21, range: [45, 56] },       // Piso 2 derecha
-    { x: 70, y: 8, range: [62, 77] },        // Piso 1 derecha
+    { x: 36, y: 23, range: [30, 39] },       // Piso 2 izquierda — para ANTES del hueco
+    { x: 52, y: 23, range: [48, 56] },        // Piso 2 derecha — empieza DESPUÉS del hueco
+    { x: 70, y: 10, range: [62, 77] },        // Piso 1 derecha
   ],
 
   sewerBats: [
-    { x: 18, y: 5, range: [10, 26] },       // Piso 1 izquierda
-    { x: 42, y: 18, range: [35, 54] },      // Piso 2
-    { x: 68, y: 5, range: [60, 76] },       // Piso 1 derecha
+    { x: 18, y: 4, range: [10, 26] },        // Piso 1 izquierda
+    { x: 44, y: 17, range: [35, 54] },       // Piso 2 (vuela sobre el hueco)
+    { x: 68, y: 4, range: [60, 76] },        // Piso 1 derecha
   ],
 
   divers: [],
   birds: [],
-  bats: [[45, 19]],
+  bats: [[35, 21]],                           // murciélago power-up antes del hueco
 
-  spawn: { x: 2, y: 5 },
+  spawn: { x: 2, y: 4 },
 });
 
 // 4-2 — LA RAMPA. Tobogán de cloaca con rampas DIAGONALES reales
