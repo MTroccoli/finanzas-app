@@ -832,63 +832,73 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 4 },
 });
 
-// 4-2 — LA RAMPA. Corredor abierto con bóveda victoriana (como 4-1)
-// pero con rampas diagonales en el suelo. SIN techo de tubo (sin ceil).
-// Bajada resbaladiza con pingüinos → pozo con balsa → subida corta →
-// sección de escalera vertical con descansos y enemigos (estilo 2-4).
+// 4-2 — LA RAMPA. Dos pisos: Piso 1 (rows 1-8, mesetas y bajada),
+// Piso 2 (rows 13-22, base, pozo, subida). Escalera entre pisos con
+// descanso y ratas. Pingüinos bajan por la subida del Piso 2.
 LEVEL_SPECS.push({
   name: '4-2',
   sewer: true,
   width: 80, height: 25, groundY: 23,
 
+  // Dos pisos como 4-1: corredor superior para mesetas, corredor
+  // inferior para la base/pozo/subida. Masa sólida rows 9-12 forma
+  // el descanso natural de la escalera.
   sewerFloors: [
-    { top: 1, bottom: 22, style: 'victorian' },
+    { top: 1, bottom: 8, style: 'victorian' },
+    { top: 13, bottom: 22, style: 'victorian' },
   ],
 
-  // Rampas SIN ceil. Meseta row 6, poza row 18, subida parcial a row 12,
-  // luego escalera vertical hasta row 6.
+  // Rampas SIN ceil. Piso 1: mesetas a row 6. Piso 2: base row 18,
+  // subida a row 14 con pingüinos.
   ramps: [
-    { x: 0,  w: 10, fromRow: 6,  toRow: 6  },              // meseta inicio
-    { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA resbaladiza ↘
-    { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // base antes del pozo
+    { x: 0,  w: 10, fromRow: 6,  toRow: 6  },              // P1: meseta inicio
+    { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA P1→P2 ↘
+    { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // P2: base antes del pozo
     // HUECO: tiles 28-33 (pozo con balsa de escombros)
-    { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // base después del pozo
-    { x: 38, w: 8,  fromRow: 18, toRow: 12 },               // SUBIDA corta → base escalera
-    { x: 46, w: 10, fromRow: 12, toRow: 12 },               // descanso escalera (row 12)
-    { x: 56, w: 24, fromRow: 6,  toRow: 6  },               // meseta final / salida
+    { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // P2: base después del pozo
+    { x: 38, w: 14, fromRow: 18, toRow: 14, slide: true },  // P2: SUBIDA con pingüinos ↗
+    { x: 52, w: 8,  fromRow: 14, toRow: 14 },               // P2: meseta antes de escalera
+    { x: 58, w: 22, fromRow: 6,  toRow: 6  },               // P1: meseta final / salida
   ],
 
-  sewerPit: { floor: 0, from: 28, to: 34 },
+  sewerPit: { floor: 1, from: 28, to: 34 },
+
+  // Muros sólidos: sellan el Piso 1 sobre la zona de rampas (tiles 10-59)
+  // para que solo se transite por el Piso 2 en esa franja. Dejan el
+  // hueco de la escalera libre.
+  sewerWalls: [
+    { x: 10, top: 1, bottom: 8, w: 44 },                   // cierra P1 sobre rampas
+    { x: 55, top: 1, bottom: 8, w: 3 },                    // cierra P1 derecha de escalera
+  ],
 
   boats: [
     { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },
   ],
 
-  // Pingüinos salen de la meseta y bajan por la rampa hacia el precipicio.
+  // Pingüinos salen de la meseta alta de la subida y bajan hacia el pozo.
   sliders: [
-    { x: 11, dir: 1, interval: 2400, minX: 10, maxX: 28 },
+    { x: 51, dir: -1, interval: 2200, minX: 34, maxX: 52 },
+    { x: 51, dir: -1, interval: 3000, minX: 34, maxX: 52 },
   ],
 
-  // Escalera: sube de row 12 a row 6 en la zona de tiles 52-55.
+  // Escalera: sube de Piso 2 (row 14) a Piso 1 (row 6). La masa
+  // sólida rows 9-12 forma el descanso intermedio.
   ladders: [
-    { x: 53, topRow: 6, baseRow: 12 },
+    { x: 54, topRow: 6, baseRow: 22 },
   ],
 
-  // Descansos (catwalks) en la zona de escalera.
-  platforms: [
-    { x: 48, y: 9, w: 8 },                                  // descanso intermedio row 9
-  ],
+  platforms: [],
 
   drips: [
     { x: 14, y: 1, interval: 1800 },
-    { x: 30, y: 1, interval: 1600 },
-    { x: 46, y: 1, interval: 1900 },
+    { x: 30, y: 13, interval: 1600 },
+    { x: 46, y: 13, interval: 1900 },
     { x: 68, y: 1, interval: 1700 },
   ],
 
-  drains: [5, 11, 36, 60, 74],
-  grates: [8, 36, 66],
-  puddles: [12, 55, 70],
+  drains: [5, 36, 60, 74],
+  grates: [8, 66],
+  puddles: [55, 70],
 
   pits: [],
   walls: [],
@@ -897,43 +907,39 @@ LEVEL_SPECS.push({
   swingPoints: [],
 
   coins: [
-    // Meseta inicio
+    // Meseta inicio P1
     [3, 5], [6, 5],
-    // Bajada — sobre la superficie diagonal (2 tiles arriba de la rampa)
-    [13, 6], [16, 8], [19, 11], [22, 14],
-    // Bases alrededor del pozo
+    // Bajada diagonal — 1 tile sobre la superficie
+    [12, 5], [15, 8], [18, 11], [21, 14],
+    // Base P2 alrededor del pozo
     [25, 17], [27, 17], [35, 17], [37, 17],
-    // Subida corta
-    [40, 16], [42, 14], [44, 13],
-    // Descanso escalera row 12
-    [47, 11], [49, 8], [51, 8],
-    // Meseta final
-    [58, 5], [62, 5], [66, 5], [70, 5], [75, 5],
+    // Subida P2 — 2 tiles sobre la superficie
+    [40, 15], [43, 14], [46, 13], [49, 13],
+    // Meseta P2 antes de escalera
+    [53, 13],
+    // Meseta final P1
+    [62, 5], [66, 5], [70, 5], [75, 5],
   ],
 
-  thugs: [
-    // Descanso intermedio row 9: patrullan el catwalk
-    { x: 50, y: 9, range: [48, 55], frozen: true },
-    { x: 54, y: 9, range: [48, 55], frozen: true },
-    // Descanso base row 12: custodian la base de la escalera
-    { x: 48, y: 12, range: [46, 55], frozen: true },
-  ],
+  thugs: [],
 
   rats: [
-    // Bajada
-    { x: 14, y: 8,  range: [12, 18] },
-    { x: 22, y: 14, range: [20, 24] },
-    // Base antes del pozo
+    // Bajada: 2 ratas subiendo (derecha a izquierda)
+    { x: 18, y: 12, range: [12, 23], dir: -1 },
+    { x: 14, y: 8,  range: [12, 23], dir: -1 },
+    // Base P2 antes del pozo
     { x: 26, y: 18, range: [24, 27] },
-    // Meseta final
-    { x: 62, y: 6, range: [58, 68] },
+    // Meseta P2 antes de escalera
+    { x: 53, y: 14, range: [52, 58] },
+    // Meseta final P1
+    { x: 65, y: 6, range: [60, 72] },
     { x: 74, y: 6, range: [70, 78] },
   ],
 
   sewerBats: [
-    { x: 16, y: 3, range: [8, 23] },
-    { x: 50, y: 7, range: [46, 55] },
-    { x: 65, y: 3, range: [57, 78] },
+    { x: 16, y: 15, range: [12, 23] },
+    { x: 44, y: 15, range: [34, 51] },
+    { x: 68, y: 3, range: [60, 78] },
   ],
 
   divers: [],
