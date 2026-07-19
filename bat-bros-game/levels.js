@@ -834,39 +834,49 @@ LEVEL_SPECS.push({
 
 // 4-2 — LA RAMPA. Corredor abierto con bóveda victoriana (como 4-1)
 // pero con rampas diagonales en el suelo. SIN techo de tubo (sin ceil).
-// Bajada resbaladiza → pozo con balsa → subida con pingüinos deslizantes.
+// Bajada resbaladiza con pingüinos → pozo con balsa → subida corta →
+// sección de escalera vertical con descansos y enemigos (estilo 2-4).
 LEVEL_SPECS.push({
   name: '4-2',
   sewer: true,
   width: 80, height: 25, groundY: 23,
 
-  // Un corredor alto con fondo victoriano — los arcos, tubos y ladrillos
-  // se ven por encima de las rampas.
   sewerFloors: [
     { top: 1, bottom: 22, style: 'victorian' },
   ],
 
-  // Rampas SIN ceil (corredor abierto). La meseta está a row 6 (alto),
-  // la poza a row 18 (bajo). El cambio de altura da espectacularidad.
+  // Rampas SIN ceil. Meseta row 6, poza row 18, subida parcial a row 12,
+  // luego escalera vertical hasta row 6.
   ramps: [
     { x: 0,  w: 10, fromRow: 6,  toRow: 6  },              // meseta inicio
     { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA resbaladiza ↘
     { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // base antes del pozo
     // HUECO: tiles 28-33 (pozo con balsa de escombros)
     { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // base después del pozo
-    { x: 38, w: 14, fromRow: 18, toRow: 6  },               // SUBIDA — pingüinos bajan ↗
-    { x: 52, w: 28, fromRow: 6,  toRow: 6  },               // meseta final / salida
+    { x: 38, w: 8,  fromRow: 18, toRow: 12 },               // SUBIDA corta → base escalera
+    { x: 46, w: 10, fromRow: 12, toRow: 12 },               // descanso escalera (row 12)
+    { x: 56, w: 24, fromRow: 6,  toRow: 6  },               // meseta final / salida
   ],
 
   sewerPit: { floor: 0, from: 28, to: 34 },
 
   boats: [
-    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa de escombros en el pozo
+    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },
   ],
 
-  // Pingüinos bajan por la rampa de subida hacia el jugador.
+  // Pingüinos salen de la meseta y bajan por la rampa hacia el precipicio.
   sliders: [
-    { x: 51, dir: -1, interval: 2200, minX: 34, maxX: 52 },
+    { x: 11, dir: 1, interval: 2400, minX: 10, maxX: 28 },
+  ],
+
+  // Escalera: sube de row 12 a row 6 en la zona de tiles 52-55.
+  ladders: [
+    { x: 53, topRow: 6, baseRow: 12 },
+  ],
+
+  // Descansos (catwalks) en la zona de escalera.
+  platforms: [
+    { x: 48, y: 9, w: 8 },                                  // descanso intermedio row 9
   ],
 
   drips: [
@@ -876,14 +886,12 @@ LEVEL_SPECS.push({
     { x: 68, y: 1, interval: 1700 },
   ],
 
-  drains: [5, 36, 60, 74],
+  drains: [5, 11, 36, 60, 74],
   grates: [8, 36, 66],
   puddles: [12, 55, 70],
 
   pits: [],
-  platforms: [],
   walls: [],
-  ladders: [],
   houses: [],
   pipes: [],
   swingPoints: [],
@@ -891,38 +899,46 @@ LEVEL_SPECS.push({
   coins: [
     // Meseta inicio
     [3, 5], [6, 5],
-    // Bajada (1 tile por encima de la superficie diagonal)
-    [13, 7], [16, 10], [19, 13], [22, 16],
+    // Bajada — sobre la superficie diagonal (2 tiles arriba de la rampa)
+    [13, 6], [16, 8], [19, 11], [22, 14],
     // Bases alrededor del pozo
     [25, 17], [27, 17], [35, 17], [37, 17],
-    // Subida (monedas tentadoras entre los pingüinos)
-    [41, 15], [44, 13], [47, 10], [50, 8],
+    // Subida corta
+    [40, 16], [42, 14], [44, 13],
+    // Descanso escalera row 12
+    [47, 11], [49, 8], [51, 8],
     // Meseta final
-    [55, 5], [60, 5], [65, 5], [70, 5], [75, 5],
+    [58, 5], [62, 5], [66, 5], [70, 5], [75, 5],
   ],
 
-  thugs: [],
+  thugs: [
+    // Descanso intermedio row 9: patrullan el catwalk
+    { x: 50, y: 9, range: [48, 55], frozen: true },
+    { x: 54, y: 9, range: [48, 55], frozen: true },
+    // Descanso base row 12: custodian la base de la escalera
+    { x: 48, y: 12, range: [46, 55], frozen: true },
+  ],
 
   rats: [
-    // Bajada: patrullan la diagonal (snap automático a la pendiente)
+    // Bajada
     { x: 14, y: 8,  range: [12, 18] },
     { x: 22, y: 14, range: [20, 24] },
     // Base antes del pozo
     { x: 26, y: 18, range: [24, 27] },
-    // Meseta final: dos ratas para presionar
-    { x: 58, y: 6, range: [54, 64] },
-    { x: 72, y: 6, range: [68, 78] },
+    // Meseta final
+    { x: 62, y: 6, range: [58, 68] },
+    { x: 74, y: 6, range: [70, 78] },
   ],
 
   sewerBats: [
-    { x: 16, y: 3, range: [8, 23] },      // sobre la bajada (alto, esquivar)
-    { x: 44, y: 12, range: [34, 51] },    // sobre la subida
-    { x: 65, y: 3, range: [55, 78] },     // meseta final
+    { x: 16, y: 3, range: [8, 23] },
+    { x: 50, y: 7, range: [46, 55] },
+    { x: 65, y: 3, range: [57, 78] },
   ],
 
   divers: [],
   birds: [],
-  bats: [[26, 17]],                        // checkpoint en la base antes del pozo
+  bats: [[26, 17]],
 
   spawn: { x: 2, y: 5 },
 });
