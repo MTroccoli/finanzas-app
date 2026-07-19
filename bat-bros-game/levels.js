@@ -832,77 +832,219 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 4 },
 });
 
-// 4-2 — LA RAMPA. Tobogán de cloaca con rampas DIAGONALES reales
-// (pendiente lisa, no escalones) y un techo bajo paralelo que forma
-// un TUBO inclinado. Bajás una rampa RESBALADIZA patinando sin
-// frenar y esquivando ratas que recorren la diagonal; descansás en
-// una poza; y trepás una rampa mientras pingüinos se deslizan hacia
-// vos y hay que saltarlos. Gotas de ácido caen del techo del tubo.
+// 4-2 — LA RAMPA. Corredor abierto con bóveda victoriana (como 4-1)
+// pero con rampas diagonales en el suelo. SIN techo de tubo (sin ceil).
+// Bajada resbaladiza → pozo con balsa → subida con pingüinos deslizantes.
 LEVEL_SPECS.push({
   name: '4-2',
   sewer: true,
-  width: 76, height: 20, groundY: 18,
-  pits: [],
-  // Rampas diagonales. ceil:3 = techo del tubo 3 tiles por encima
-  // de la pendiente (bajo, pero deja saltar para esquivar). La
-  // bajada es slide:true = patina.
-  ramps: [
-    { x: 0,  w: 10, fromRow: 5,  toRow: 5,  ceil: 3 },               // meseta inicial
-    { x: 10, w: 20, fromRow: 5,  toRow: 15, slide: true, ceil: 3 },  // BAJADA resbaladiza ↘
-    { x: 30, w: 12, fromRow: 15, toRow: 15, ceil: 3 },               // poza / descanso
-    { x: 42, w: 20, fromRow: 15, toRow: 5,  ceil: 3 },               // SUBIDA (se controla) ↗
-    { x: 62, w: 14, fromRow: 5,  toRow: 5,  ceil: 3 },               // meseta final / salida
+  width: 80, height: 25, groundY: 23,
+
+  // Un corredor alto con fondo victoriano — los arcos, tubos y ladrillos
+  // se ven por encima de las rampas.
+  sewerFloors: [
+    { top: 1, bottom: 22, style: 'victorian' },
   ],
+
+  // Rampas SIN ceil (corredor abierto). La meseta está a row 6 (alto),
+  // la poza a row 18 (bajo). El cambio de altura da espectacularidad.
+  ramps: [
+    { x: 0,  w: 10, fromRow: 6,  toRow: 6  },              // meseta inicio
+    { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA resbaladiza ↘
+    { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // base antes del pozo
+    // HUECO: tiles 28-33 (pozo con balsa de escombros)
+    { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // base después del pozo
+    { x: 38, w: 14, fromRow: 18, toRow: 6  },               // SUBIDA — pingüinos bajan ↗
+    { x: 52, w: 28, fromRow: 6,  toRow: 6  },               // meseta final / salida
+  ],
+
+  sewerPit: { floor: 0, from: 28, to: 34 },
+
+  boats: [
+    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa de escombros en el pozo
+  ],
+
+  // Pingüinos bajan por la rampa de subida hacia el jugador.
+  sliders: [
+    { x: 51, dir: -1, interval: 2200, minX: 34, maxX: 52 },
+  ],
+
+  drips: [
+    { x: 14, y: 1, interval: 1800 },
+    { x: 30, y: 1, interval: 1600 },
+    { x: 46, y: 1, interval: 1900 },
+    { x: 68, y: 1, interval: 1700 },
+  ],
+
+  drains: [5, 36, 60, 74],
+  grates: [8, 36, 66],
+  puddles: [12, 55, 70],
+
+  pits: [],
   platforms: [],
   walls: [],
   ladders: [],
   houses: [],
   pipes: [],
-  // Pingüinos deslizantes: nacen arriba de la rampa de subida y
-  // bajan por la diagonal hacia el jugador. UN SOLO emisor con una
-  // única frecuencia constante → todos bajan al mismo ritmo, bien
-  // espaciados y sincronizados (no aleatorio). Se saltan o se pisan.
-  // No cuentan para el 80%.
-  sliders: [
-    { x: 60, dir: -1, interval: 2400, minX: 42, maxX: 62 },
-  ],
-  // Gotas de ácido tóxico saliendo de bocas de tubería en el techo
-  // del tubo (dripCeilY sigue el techo diagonal). Pocas y espaciadas.
-  drips: [
-    { x: 18, interval: 1800 },   // sobre la bajada
-    { x: 36, interval: 1900 },   // sobre la poza
-    { x: 52, interval: 1800 },   // sobre la subida
-  ],
-  drains: [5, 36, 68],
-  // Rendijas de calle en el techo que dejan pasar un rayo de luz.
-  grates: [8, 36, 66],
   swingPoints: [],
-  // Monedas SIEMPRE 1 tile por encima de la superficie diagonal
-  // (alcanzables, nunca enterradas).
+
   coins: [
-    [4, 4], [7, 4],
-    [14, 6], [18, 8], [22, 10], [26, 12],   // bajando la diagonal
-    [34, 14], [38, 14],                       // poza
-    [46, 12], [50, 10], [54, 8], [58, 6],    // subiendo la diagonal
-    [66, 4], [70, 4], [74, 4],               // salida
+    // Meseta inicio
+    [3, 5], [6, 5],
+    // Bajada (1 tile por encima de la superficie diagonal)
+    [13, 7], [16, 10], [19, 13], [22, 16],
+    // Bases alrededor del pozo
+    [25, 17], [27, 17], [35, 17], [37, 17],
+    // Subida (monedas tentadoras entre los pingüinos)
+    [41, 15], [44, 13], [47, 10], [50, 8],
+    // Meseta final
+    [55, 5], [60, 5], [65, 5], [70, 5], [75, 5],
   ],
-  // Sin thug inicial (se quitó a pedido). El nivel es de esquivar.
+
   thugs: [],
+
   rats: [
-    // Obstáculos que RECORREN la diagonal de bajada (y se snappean
-    // a la pendiente en updateRats).
-    { x: 16, y: 8, range: [13, 19] },
-    { x: 24, y: 12, range: [21, 28] },
-    // Poza: patrullan la zona de descanso plana.
-    { x: 34, y: 15, range: [31, 40] },
-    { x: 39, y: 15, range: [35, 41], dir: -1 },
-    // Meseta final.
-    { x: 70, y: 5, range: [64, 75] },
+    // Bajada: patrullan la diagonal (snap automático a la pendiente)
+    { x: 14, y: 8,  range: [12, 18] },
+    { x: 22, y: 14, range: [20, 24] },
+    // Base antes del pozo
+    { x: 26, y: 18, range: [24, 27] },
+    // Meseta final: dos ratas para presionar
+    { x: 58, y: 6, range: [54, 64] },
+    { x: 72, y: 6, range: [68, 78] },
   ],
+
+  sewerBats: [
+    { x: 16, y: 3, range: [8, 23] },      // sobre la bajada (alto, esquivar)
+    { x: 44, y: 12, range: [34, 51] },    // sobre la subida
+    { x: 65, y: 3, range: [55, 78] },     // meseta final
+  ],
+
   divers: [],
   birds: [],
-  bats: [[36, 14]],   // checkpoint en la poza
-  spawn: { x: 3, y: 4 },
+  bats: [[26, 17]],                        // checkpoint en la base antes del pozo
+
+  spawn: { x: 2, y: 5 },
+});
+
+// 4-3 — LA CISTERNA. Nivel de dos pisos con escaleras, rampas en el
+// piso inferior, pingüinos, balsa y más enemigos. El jugador recorre
+// el Piso 1 (arriba), baja por escalera al Piso 2 (abajo), cruza un
+// pozo en balsa, sube una rampa esquivando pingüinos, y vuelve a
+// subir al Piso 1 para salir.
+//
+// Piso 1 — rows 1-8  (estilo service)
+// Masa    — rows 9-12
+// Piso 2  — rows 13-22 (estilo victorian, con rampas sin ceil)
+// Base    — rows 23-27
+LEVEL_SPECS.push({
+  name: '4-3',
+  sewer: true,
+  width: 90, height: 28, groundY: 25,
+
+  sewerFloors: [
+    { top: 1, bottom: 8, style: 'service' },
+    { top: 13, bottom: 22, style: 'victorian' },
+  ],
+
+  sewerWalls: [
+    { x: 42, top: 1, bottom: 8, w: 2 },     // bloquea Piso 1, fuerza bajar
+    { x: 35, top: 13, bottom: 22, w: 2 },   // bloquea Piso 2, fuerza usar escalera derecha
+  ],
+
+  ladders: [
+    { x: 30, topRow: 9, baseRow: 25 },      // baja de Piso 1 a Piso 2
+    { x: 55, topRow: 9, baseRow: 25 },      // sube de Piso 2 a Piso 1
+    { x: 80, topRow: 9, baseRow: 25 },      // salida: vuelve a Piso 1
+  ],
+
+  // Rampas en Piso 2 (derecha del muro). Conectan con el suelo del
+  // corredor (row 23) y suben hasta row 15 sin ceil (techo abierto).
+  ramps: [
+    { x: 56, w: 6,  fromRow: 23, toRow: 23 },              // piso plano tras escalera
+    { x: 62, w: 12, fromRow: 23, toRow: 15, slide: true },  // SUBIDA resbaladiza ↗ (es bajada para pingüinos)
+    { x: 74, w: 16, fromRow: 15, toRow: 15 },               // meseta alta
+  ],
+
+  // Pozo en Piso 2 (sección izquierda, antes de las rampas)
+  sewerPit: { floor: 1, from: 44, to: 50 },
+
+  boats: [
+    { x: 45, y: 24, w: 3, range: [44, 49], speed: 0.7 },   // balsa en el pozo
+  ],
+
+  // Pingüinos bajan por la rampa de subida
+  sliders: [
+    { x: 73, dir: -1, interval: 2000, minX: 56, maxX: 74 },
+  ],
+
+  // Gancho sobre el pozo del Piso 2 (alternativa a la balsa)
+  swingPoints: [
+    [47, 17],                                // gancho sobre el pozo
+  ],
+
+  drips: [
+    { x: 10, y: 1, interval: 1800 },        // Piso 1
+    { x: 25, y: 1, interval: 1600 },        // Piso 1
+    { x: 50, y: 13, interval: 1500 },       // Piso 2
+    { x: 70, y: 13, interval: 1700 },       // Piso 2
+    { x: 85, y: 1, interval: 1800 },        // Piso 1
+  ],
+
+  drains: [8, 25, 50, 70, 85],
+  grates: [12, 40, 65, 82],
+  puddles: [15, 48, 75],
+
+  pits: [],
+  platforms: [],
+  walls: [],
+  houses: [],
+  pipes: [],
+
+  coins: [
+    // Piso 1 izquierda (antes del muro)
+    [5, 7], [10, 7], [15, 7], [20, 7], [25, 7],
+    // Piso 2 izquierda (después de bajar)
+    [33, 24], [38, 24],
+    // Alrededor del pozo en Piso 2
+    [42, 24], [51, 24],
+    // Rampas en Piso 2
+    [58, 22], [64, 20], [67, 18], [70, 16],
+    // Meseta alta
+    [76, 14], [79, 14], [82, 14], [85, 14],
+    // Piso 1 derecha (salida)
+    [55, 7], [60, 7], [65, 7], [70, 7], [75, 7], [82, 7],
+  ],
+
+  thugs: [],
+
+  rats: [
+    // Piso 1 — presión constante
+    { x: 12, y: 9, range: [4, 22] },
+    { x: 28, y: 9, range: [22, 41] },
+    { x: 60, y: 9, range: [55, 72] },
+    { x: 78, y: 9, range: [72, 88] },
+    // Piso 2 izquierda (antes de las rampas)
+    { x: 38, y: 23, range: [33, 43] },
+    { x: 52, y: 23, range: [50, 55] },
+    // Meseta alta de la rampa
+    { x: 80, y: 15, range: [76, 88] },
+  ],
+
+  sewerBats: [
+    // Piso 1 (rows 1-8, superficie en row 9 → bats a y:6 alcanzables)
+    { x: 15, y: 6, range: [5, 28] },
+    { x: 65, y: 6, range: [55, 80] },
+    // Piso 2 (rows 13-22, superficie en row 23 → bats a y:19 alcanzables)
+    { x: 40, y: 19, range: [33, 50] },
+    { x: 70, y: 19, range: [60, 80] },
+  ],
+
+  divers: [],
+  birds: [],
+  bats: [[38, 22]],                          // checkpoint en Piso 2 antes del pozo
+
+  spawn: { x: 2, y: 7 },
 });
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
