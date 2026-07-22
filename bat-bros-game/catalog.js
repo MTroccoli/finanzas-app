@@ -198,7 +198,7 @@ function buildLevel(spec) {
           pipes = [], ceilingRow = null, drips = [], drains = [], grates = [],
           puddles = [],
           ramps = [], sliders = [], sewerFloors = null, sewerWalls = [],
-          sewerPit = null,
+          sewerPit = null, sewerPits = [], steamVents = [], waterCanals = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
@@ -223,9 +223,10 @@ function buildLevel(spec) {
       for (let y = sw.top; y <= sw.bottom; y++)
         for (let xi = 0; xi < ww; xi++) solid[y][sw.x + xi] = true;
     }
-    if (sewerPit) {
-      const f = sewerFloors[sewerPit.floor];
-      for (let x = sewerPit.from; x < sewerPit.to; x++)
+    const allPits = [...(sewerPit ? [sewerPit] : []), ...sewerPits];
+    for (const pit of allPits) {
+      const f = sewerFloors[pit.floor ?? 0];
+      for (let x = pit.from; x < pit.to; x++)
         for (let y = f.bottom + 1; y < height; y++) solid[y][x] = false;
     }
   } else {
@@ -348,6 +349,23 @@ function buildLevel(spec) {
     ceilingRow,
     sewerFloors: sewerFloors ? sewerFloors.map(f => ({ top: f.top, bottom: f.bottom, style: f.style || 'victorian' })) : null,
     sewerPit: sewerPit ? { floor: sewerPit.floor, from: sewerPit.from, to: sewerPit.to } : null,
+    // Steam vents (Act 4 hazard): a floor nozzle that cycles
+    // idle -> hiss (warning) -> erupt (damaging column) -> idle.
+    steamVents: steamVents.map(v => {
+      const vx = (typeof v === 'number' ? v : v.x);
+      return {
+        x: vx * TILE + TILE / 2,
+        height: (typeof v === 'object' && v.height) ? v.height : 4,   // tiles tall
+        interval: (typeof v === 'object' && v.interval) ? v.interval : 2600,
+        warn: (typeof v === 'object' && v.warn) ? v.warn : 700,       // hiss lead-in ms
+        erupt: (typeof v === 'object' && v.erupt) ? v.erupt : 900,    // active ms
+        phase: (typeof v === 'object' && v.phase) ? v.phase : 0,      // ms offset
+        state: 'idle', nextAt: 0,
+      };
+    }),
+    // Flooded canals (Act 4): green water fills [from,to) down to the
+    // floor; purely a visual + a home for penguin bombers.
+    waterCanals: waterCanals.map(c => ({ from: c[0], to: c[1], row: c[2] ?? groundY })),
     sewerWalls: sewerWalls.map(sw => ({ x: sw.x * TILE, w: (sw.w || 1) * TILE, top: sw.top * TILE, bottom: (sw.bottom + 1) * TILE })),
     solid,
     // Pipe descriptors in TILE units. A pipe is a ceiling drop to
@@ -481,6 +499,9 @@ function buildLevel(spec) {
       jumpHeight: d.height ?? 5,               // in tiles
       alive: true,
       facing: d.dir ?? 1,
+      // Bomber variant: on splash-down it drops a floor shockwave.
+      bomber: !!d.bomber,
+      blastRow: (d.blastRow ?? d.y ?? groundY),  // floor row the blast rides
     })),
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;

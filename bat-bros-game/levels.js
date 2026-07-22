@@ -839,7 +839,7 @@ LEVEL_SPECS.push({
 LEVEL_SPECS.push({
   name: '4-2',
   sewer: true,
-  width: 80, height: 25, groundY: 23,
+  width: 94, height: 25, groundY: 23,
 
   // Un solo corredor alto: todo el espacio vertical queda abierto para
   // que las rampas diagonales funcionen sin chocar contra masa sólida.
@@ -857,13 +857,31 @@ LEVEL_SPECS.push({
     { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // base después del pozo
     { x: 38, w: 12, fromRow: 18, toRow: 13 },               // SUBIDA con pingüinos ↗ (no resbala: se puede subir)
     { x: 50, w: 9,  fromRow: 13, toRow: 13 },               // DESCANSO plano (ratas)
-    { x: 59, w: 21, fromRow: 6,  toRow: 6  },               // meseta final / salida
+    { x: 59, w: 11, fromRow: 6,  toRow: 6  },               // meseta con CHORROS DE VAPOR
+    { x: 70, w: 8,  fromRow: 6,  toRow: 18 },               // bajada al canal ↘
+    { x: 78, w: 2,  fromRow: 18, toRow: 18 },               // borde antes del canal
+    // CANAL DE AGUA: tiles 80-88 (balsa + pingüinos bombarderos)
+    { x: 89, w: 5,  fromRow: 18, toRow: 18 },               // repisa de salida
   ],
 
   sewerPit: { floor: 0, from: 28, to: 34 },
+  // Segundo hueco de agua: el canal inundado del final.
+  sewerPits: [{ floor: 0, from: 80, to: 89 }],
+
+  // Agua verde visible: el pozo inicial y el canal final.
+  waterCanals: [[28, 34, 19], [80, 89, 19]],
+
+  // Chorros de vapor: nozzles en el suelo de la meseta que silban y
+  // luego erupcionan una columna dañina. Desfasados para que no salgan
+  // a la vez.
+  steamVents: [
+    { x: 62, phase: 0 },
+    { x: 66, phase: 1300 },
+  ],
 
   boats: [
-    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa de escombros
+    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa del pozo inicial
+    { x: 81, y: 19, w: 3, range: [80, 90], speed: 0.8 },   // balsa del canal final (solapa la repisa)
   ],
 
   // Escalera en el borde derecho del descanso: baja hasta la superficie
@@ -893,7 +911,7 @@ LEVEL_SPECS.push({
     { x: 68, y: 1, interval: 1700 },
   ],
 
-  drains: [5, 36, 48, 74],                                  // alcantarilla en tile 48
+  drains: [5, 36, 48, 74, 90],                              // alcantarilla en tile 48
   grates: [8, 66],
   puddles: [12, 55, 70],
 
@@ -914,8 +932,14 @@ LEVEL_SPECS.push({
     [40, 15], [43, 14], [46, 12], [49, 11],
     // Descanso row 13
     [52, 11], [55, 11],
-    // Meseta final
-    [62, 5], [66, 5], [70, 5], [75, 5],
+    // Meseta con vapores (entre las columnas)
+    [60, 5], [64, 5], [68, 5],
+    // Bajada al canal
+    [72, 7], [75, 11],
+    // Canal (tentadoras sobre el agua, se agarran desde la balsa)
+    [82, 17], [85, 17],
+    // Repisa de salida
+    [91, 17],
   ],
 
   thugs: [],
@@ -929,21 +953,29 @@ LEVEL_SPECS.push({
     // DESCANSO row 13: 1 rata en la mitad derecha (no tira al jugador
     // pendiente abajo apenas corona la subida).
     { x: 56, y: 13, range: [54, 58] },
-    // Meseta final
-    { x: 70, y: 6, range: [62, 76] },
+    // Meseta con vapores
+    { x: 64, y: 6, range: [60, 68] },
+    // Repisa de salida
+    { x: 91, y: 18, range: [89, 93] },
   ],
 
   sewerBats: [
     { x: 16, y: 3, range: [10, 23] },      // sobre la bajada
-    { x: 68, y: 3, range: [60, 78] },      // meseta final
+    { x: 64, y: 3, range: [59, 69] },      // meseta con vapores
   ],
 
-  divers: [],
+  // Pingüinos BOMBARDEROS: saltan del agua del canal y al caer sueltan
+  // una onda expansiva por la repisa (row 19). Se esquivan saltando o
+  // se matan con un pisotón en el aire.
+  divers: [
+    { x: 83, y: 20, bomber: true, height: 5, blastRow: 19, interval: 2600 },
+    { x: 86, y: 20, bomber: true, height: 4, blastRow: 19, interval: 3300 },
+  ],
   birds: [],
-  // Checkpoints (cada bat es checkpoint): antes del pozo y en el
-  // descanso (a nivel de piso, se recoge caminando), para que morir en
-  // la escalera no obligue a repetir el pozo. Además da forma grande.
-  bats: [[26, 16], [52, 13]],
+  // Checkpoints (cada bat es checkpoint): antes del pozo, en el descanso
+  // y antes del canal, para que morir en el canal no obligue a repetir
+  // todo. Además da forma grande.
+  bats: [[26, 16], [52, 13], [78, 17]],
 
   spawn: { x: 2, y: 5 },
 });

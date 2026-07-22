@@ -768,6 +768,8 @@ function updateDivers(dt, now) {
         d.vy = 0;
         d.state = 'wait';
         d.nextJumpAt = now + d.interval;
+        // bombers drop a floor shockwave where they land
+        if (d.bomber) spawnBombWave(d, now);
       }
     }
 
@@ -783,6 +785,58 @@ function updateDivers(dt, now) {
     } else {
       hurtPlayer();
       if (state !== 'playing') return;
+    }
+  }
+}
+
+// Bomber splash: spawn a floor shockwave that races both ways along the
+// walkway row. Called from updateDivers when a `bomber` diver falls back.
+function spawnBombWave(d, now) {
+  level.bombWaves = level.bombWaves || [];
+  level.bombWaves.push({ x: d.x + d.w / 2, floorY: d.blastRow * TILE, r: 12, born: now });
+  if (typeof triggerScreenShake === 'function') triggerScreenShake(now, 4, 180);
+}
+
+// Expanding floor shockwaves from penguin bombers. Only a player
+// standing on the ground near the blast's ring gets hit — a jump clears it.
+function updateBombWaves(dt, now) {
+  const waves = level.bombWaves || [];
+  for (const w of waves) {
+    w.r += 4.6 * dt;
+    if (player.onGround && !player.swinging && Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+      const pcx = player.x + player.w / 2;
+      const pfeet = player.y + player.h;
+      if (Math.abs(pfeet - w.floorY) < TILE && Math.abs(Math.abs(pcx - w.x) - w.r) < 22) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+    }
+  }
+  level.bombWaves = waves.filter(w => w.r < 200);
+}
+
+// Steam vents: a floor nozzle that cycles idle -> hiss (telegraph) ->
+// erupt (a damaging vertical column) -> idle. The hiss gives the player
+// a beat to clear the column before it fires.
+function updateSteamVents(dt, now) {
+  const vents = level.steamVents || [];
+  for (const v of vents) {
+    if (!v.nextAt) v.nextAt = now + v.interval + v.phase;
+    if (v.state === 'idle') {
+      if (now >= v.nextAt) { v.state = 'hiss'; v.stateUntil = now + v.warn; }
+    } else if (v.state === 'hiss') {
+      if (now >= v.stateUntil) { v.state = 'erupt'; v.stateUntil = now + v.erupt; }
+    } else if (v.state === 'erupt') {
+      if (now >= v.stateUntil) { v.state = 'idle'; v.nextAt = now + v.interval; }
+    }
+    if (v.state === 'erupt') {
+      const surfY = surfaceYAt(v.x);
+      const colTop = surfY - v.height * TILE;
+      const box = { x: v.x - 11, y: colTop, w: 22, h: surfY - colTop };
+      if (aabbOverlap(player, box)) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
     }
   }
 }
@@ -917,6 +971,122 @@ function drawSliders(t) {
       for (let d = 1; d <= 3; d++) {
         ctx.beginPath();
         ctx.arc(px + s.w / 2 - s.vx * d * 2, py + s.h - 2, 3 - d * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+}
+
+// Flooded canal water: murky green fill with slime ripples, drawn in
+// the waterCanals ranges down to the level floor.
+function drawWaterCanals(t) {
+  for (const c of (level.waterCanals || [])) {
+    const x0 = c.from * TILE - camera.x, x1 = c.to * TILE - camera.x;
+    if (x1 < -20 || x0 > CANVAS_W + 20) continue;
+    const waterTop = c.row * TILE - camera.y;
+    if (waterTop > CANVAS_H) continue;
+    const h = CANVAS_H - waterTop;
+    ctx.fillStyle = '#173327';
+    ctx.fillRect(x0, waterTop, x1 - x0, h);
+    // brighter surface skin
+    ctx.fillStyle = 'rgba(120,200,150,0.20)';
+    ctx.fillRect(x0, waterTop, x1 - x0, 3);
+    // slime ripple lines
+    ctx.strokeStyle = 'rgba(140,220,160,0.22)';
+    ctx.lineWidth = 1;
+    const rows = Math.max(1, Math.floor(h / 14));
+    for (let i = 0; i < rows; i++) {
+      const yy = waterTop + 9 + i * 14;
+      if (yy > CANVAS_H) break;
+      ctx.beginPath();
+      for (let x = x0; x <= x1; x += 14) {
+        const wy = yy + Math.sin((x + t / 34 + i * 26) / 34) * 2;
+        if (x === x0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+      }
+      ctx.stroke();
+    }
+    // floating gunk flecks
+    ctx.fillStyle = 'rgba(90,150,100,0.4)';
+    for (let k = 0; k < 5; k++) {
+      const fx = x0 + ((hash01(c.from + k * 13) * (x1 - x0) + t / 60) % (x1 - x0));
+      ctx.beginPath(); ctx.arc(fx, waterTop + 6 + (k % 2) * 4, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// Penguin-bomber floor shockwaves: expanding twin arcs racing along the
+// walkway. Bright leading edge so the player can read where to jump.
+function drawBombWaves(t) {
+  for (const w of (level.bombWaves || [])) {
+    const gy = w.floorY - camera.y;
+    const life = Math.max(0, 1 - w.r / 200);
+    for (const dir of [-1, 1]) {
+      const cxp = w.x - camera.x + dir * w.r;
+      if (cxp < -30 || cxp > CANVAS_W + 30) continue;
+      ctx.strokeStyle = `rgba(150,235,190,${0.55 * life})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cxp, gy, 9, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(90,150,110,${0.4 * life})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cxp, gy, 13, Math.PI * 1.2, Math.PI * 1.8);
+      ctx.stroke();
+    }
+  }
+}
+
+// Steam vents: floor nozzle + telegraphed hiss + a billowing steam
+// column while erupting.
+function drawSteamVents(t) {
+  const now = performance.now();
+  for (const v of (level.steamVents || [])) {
+    const sx = v.x - camera.x;
+    if (sx < -40 || sx > CANVAS_W + 40) continue;
+    const surfY = surfaceYAt(v.x) - camera.y;
+    // brass floor nozzle (always visible)
+    ctx.fillStyle = '#4a4038';
+    ctx.fillRect(sx - 10, surfY - 4, 20, 6);
+    ctx.fillStyle = '#6b5a44';
+    ctx.fillRect(sx - 10, surfY - 4, 20, 2);
+    ctx.fillStyle = '#241d16';
+    ctx.fillRect(sx - 6, surfY - 3, 12, 3);
+    // vent grille slots
+    ctx.strokeStyle = '#8a7659'; ctx.lineWidth = 1;
+    for (let gx = -5; gx <= 5; gx += 3) {
+      ctx.beginPath(); ctx.moveTo(sx + gx, surfY - 3); ctx.lineTo(sx + gx, surfY - 1); ctx.stroke();
+    }
+    if (v.state === 'hiss') {
+      // warning wisps: small flickering puffs just above the nozzle
+      const a = 0.25 + 0.2 * Math.sin(now / 60);
+      ctx.fillStyle = `rgba(230,235,240,${a})`;
+      for (let k = 0; k < 3; k++) {
+        const wy = surfY - 6 - ((now / 6 + k * 14) % 20);
+        ctx.beginPath(); ctx.arc(sx + Math.sin(now / 80 + k) * 3, wy, 2.5 - k * 0.5, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (v.state === 'erupt') {
+      const topY = surfY - v.height * TILE;
+      // core column (bright, hot)
+      const g = ctx.createLinearGradient(0, topY, 0, surfY);
+      g.addColorStop(0, 'rgba(240,245,250,0.05)');
+      g.addColorStop(0.4, 'rgba(230,238,245,0.5)');
+      g.addColorStop(1, 'rgba(210,225,235,0.8)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(sx - 8, surfY);
+      ctx.lineTo(sx - 4, topY);
+      ctx.lineTo(sx + 4, topY);
+      ctx.lineTo(sx + 8, surfY);
+      ctx.closePath(); ctx.fill();
+      // billowing puffs along the column
+      for (let k = 0; k < 6; k++) {
+        const fy = surfY - ((now / 4 + k * 22) % (v.height * TILE));
+        const spread = 6 + (surfY - fy) * 0.10;
+        const pa = 0.35 * (fy - topY) / (surfY - topY) + 0.15;
+        ctx.fillStyle = `rgba(235,240,246,${Math.max(0, pa)})`;
+        ctx.beginPath();
+        ctx.arc(sx + Math.sin(now / 90 + k * 1.7) * spread * 0.5, fy, 4 + (surfY - fy) * 0.03, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -3236,6 +3406,11 @@ function updatePlaying(dt) {
   updateSnowCannons(dt, now);
   updateRats(dt, now);
   updateDivers(dt, now);
+  if (state !== 'playing') return;
+  updateBombWaves(dt, now);
+  if (state !== 'playing') return;
+  updateSteamVents(dt, now);
+  if (state !== 'playing') return;
   // Act 3 co-op companion — follows behind the active character
   if (companion) {
     const targetX = player.x - player.facing * 40;
@@ -7004,35 +7179,22 @@ function drawSewerDecor(t) {
       const f = level.sewerFloors[fi];
       const floorSurfY = (f.bottom + 1) * TILE - camera.y;
       if (floorSurfY < -20 || floorSurfY > CANVAS_H + 20) continue;
-      const pitFrom = level.sewerPit && level.sewerPit.floor === fi ? level.sewerPit.from : -1;
-      const pitTo = level.sewerPit && level.sewerPit.floor === fi ? level.sewerPit.to : -1;
-      // Green slime strip on floor top edge — skip pit columns
-      ctx.fillStyle = '#4a7a52';
-      if (pitFrom >= 0) {
-        const px0 = pitFrom * TILE - camera.x;
-        const px1 = pitTo * TILE - camera.x;
-        if (px0 > 0) ctx.fillRect(0, floorSurfY - 3, px0, 3);
-        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY - 3, CANVAS_W - px1, 3);
-        ctx.fillStyle = '#6a9a6c';
-        if (px0 > 0) ctx.fillRect(0, floorSurfY - 3, px0, 1);
-        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY - 3, CANVAS_W - px1, 1);
-      } else {
-        ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 3);
-        ctx.fillStyle = '#6a9a6c';
-        ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 1);
-      }
-      // Wet reflection on floor surface — also skip pit
+      // Green slime strip + wet reflection drawn per column, only where
+      // the floor is actually solid — this automatically skips every
+      // carved pit / canal on this floor (any number of them).
+      const floorRow = f.bottom + 1;
+      const solidRow = level.solid[floorRow];
       const wetG = ctx.createLinearGradient(0, floorSurfY, 0, floorSurfY + 20);
       wetG.addColorStop(0, 'rgba(100,130,80,0.12)');
       wetG.addColorStop(1, 'rgba(100,130,80,0)');
-      ctx.fillStyle = wetG;
-      if (pitFrom >= 0) {
-        const px0 = pitFrom * TILE - camera.x;
-        const px1 = pitTo * TILE - camera.x;
-        if (px0 > 0) ctx.fillRect(0, floorSurfY, px0, 20);
-        if (px1 < CANVAS_W) ctx.fillRect(px1, floorSurfY, CANVAS_W - px1, 20);
-      } else {
-        ctx.fillRect(0, floorSurfY, CANVAS_W, 20);
+      const startCol = Math.max(0, Math.floor(camera.x / TILE));
+      const endCol = Math.min(level.width, Math.ceil((camera.x + CANVAS_W) / TILE));
+      for (let cxi = startCol; cxi < endCol; cxi++) {
+        if (!solidRow || !solidRow[cxi]) continue;   // carved column → no floor here
+        const x = cxi * TILE - camera.x;
+        ctx.fillStyle = '#4a7a52'; ctx.fillRect(x, floorSurfY - 3, TILE + 1, 3);
+        ctx.fillStyle = '#6a9a6c'; ctx.fillRect(x, floorSurfY - 3, TILE + 1, 1);
+        ctx.fillStyle = wetG; ctx.fillRect(x, floorSurfY, TILE + 1, 20);
       }
     }
 
@@ -10653,6 +10815,7 @@ function render(t) {
 
   drawBackground(t);
   drawDockWater(t);
+  drawWaterCanals(t);
   drawBoats(t);
   drawCranes();
   drawSwingPoints(t);
@@ -10676,6 +10839,8 @@ function render(t) {
   drawDivers();
   drawSliderChutes(t);
   drawSliders(t);
+  drawBombWaves(t);
+  drawSteamVents(t);
   if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
   drawSnowballs(t);
