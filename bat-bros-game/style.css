@@ -44,6 +44,29 @@ html, body {
   font-weight: bold;
 }
 
+.hud-audio {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.audio-btn {
+  background: none;
+  border: 1px solid #3a4a7a;
+  border-radius: 4px;
+  color: #ffd166;
+  font-size: 14px;
+  padding: 2px 6px;
+  cursor: pointer;
+  line-height: 1;
+  touch-action: manipulation;
+}
+.audio-btn:active {
+  background: #3a4a7a;
+}
+
 .cave-btn {
   position: absolute;
   top: 46px;

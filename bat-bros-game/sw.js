@@ -1,10 +1,11 @@
-const CACHE_NAME = 'bat-bros-v79';
+const CACHE_NAME = 'bat-bros-v80';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './catalog.js',
   './levels.js',
+  './audio.js',
   './game.js',
   './manifest.json',
   './icon-192.png',

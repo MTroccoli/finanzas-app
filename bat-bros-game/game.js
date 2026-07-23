@@ -62,6 +62,7 @@ function switchCharacter() {
     jumpsUsed: 0,
   };
   activeChar = activeChar === 'batman' ? 'robin' : 'batman';
+  BatAudio.sfxSwap();
   // Robin's only tool is the batarang — regardless of what Batman was
   // holding, force it on when Robin takes over. Batman keeps whatever
   // he last chose (batarang / batigarra / armor).
@@ -376,6 +377,18 @@ const btnChangeName = document.getElementById('btn-change-name');
 const btnShoot = document.getElementById('btn-shoot');
 const btnUp = document.getElementById('btn-up');
 const btnDown = document.getElementById('btn-down');
+const btnMute = document.getElementById('btn-mute');
+const btnMusicToggle = document.getElementById('btn-music');
+
+if (btnMute) btnMute.addEventListener('click', () => {
+  const m = BatAudio.toggleMute();
+  btnMute.textContent = m ? '🔇' : '🔊';
+});
+if (btnMusicToggle) btnMusicToggle.addEventListener('click', () => {
+  const m = BatAudio.toggleMusic();
+  btnMusicToggle.textContent = m ? '🎵' : '🎵';
+  btnMusicToggle.style.opacity = m ? '0.4' : '1';
+});
 
 // Show/hide the on-screen fire button and set its icon for the active gadget.
 // The up/down buttons are always visible for ladder climbing. The gadget is
@@ -732,6 +745,7 @@ function updateRats(dt, now) {
       r.alive = false;
       player.vy = STOMP_BOUNCE;
       score += 75; hud.score.textContent = score;
+      BatAudio.sfxStomp();
     } else if (r.confused) {
       continue;   // walk through unharmed
     } else {
@@ -780,6 +794,7 @@ function updateDivers(dt, now) {
       d.alive = false;
       player.vy = STOMP_BOUNCE;
       score += 150; hud.score.textContent = score;
+      BatAudio.sfxStomp();
     } else if (d.confused) {
       continue;
     } else {
@@ -872,6 +887,7 @@ function updateSliders(dt, now) {
           s.alive = false;
           player.vy = STOMP_BOUNCE;
           score += 120; hud.score.textContent = score;
+          BatAudio.sfxStomp();
         } else if (Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
           hurtPlayer();
           if (state !== 'playing') return;
@@ -1113,6 +1129,7 @@ function spawnSmokeBomb(now) {
   });
   smokeAmmo--;
   updateSmokeHud();
+  BatAudio.sfxSmokeBomb();
 }
 
 function updateSmokeClouds(dt, now) {
@@ -1191,6 +1208,7 @@ function spawnBatarang() {
     type: player.gadget,
   });
   if (player.gadget === 'batarang') { batarangAmmo--; updateAmmoHud(); }
+  BatAudio.sfxBatarang();
 }
 
 function updateBatarangs(dt) {
@@ -1237,6 +1255,7 @@ function updateBatarangs(dt) {
             g.frozen = false;
             g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
             score += 50;
+            BatAudio.sfxThaw();
           } else {
             g.alive = false;
             score += 100;
@@ -1244,6 +1263,7 @@ function updateBatarangs(dt) {
           hud.score.textContent = score;
         }
         b.phase = 'back';
+        BatAudio.sfxBatarangHit();
         break;
       }
     }
@@ -1255,7 +1275,7 @@ function updateBatarangs(dt) {
         if (b.x + 8 > r.x && b.x - 8 < r.x + r.w && b.y + 8 > r.y && b.y - 8 < r.y + r.h) {
           r.alive = false;
           score += 75; hud.score.textContent = score;
-          b.phase = 'back'; break;
+          b.phase = 'back'; BatAudio.sfxBatarangHit(); break;
         }
       }
     }
@@ -1266,7 +1286,7 @@ function updateBatarangs(dt) {
         if (b.x + 8 > d.x && b.x - 8 < d.x + d.w && b.y + 8 > d.y && b.y - 8 < d.y + d.h) {
           d.alive = false;
           score += 150; hud.score.textContent = score;
-          b.phase = 'back'; break;
+          b.phase = 'back'; BatAudio.sfxBatarangHit(); break;
         }
       }
     }
@@ -1292,6 +1312,7 @@ function updateBatarangs(dt) {
           }
           hud.score.textContent = score;
           b.phase = 'back';
+          BatAudio.sfxBatarangHit();
           break;
         }
       }
@@ -1301,7 +1322,7 @@ function updateBatarangs(dt) {
         if (!sb.alive) continue;
         if (b.x + 8 > sb.x && b.x - 8 < sb.x + sb.w && b.y + 8 > sb.y && b.y - 8 < sb.y + sb.h) {
           sb.alive = false; score += 120; hud.score.textContent = score;
-          b.phase = 'back'; break;
+          b.phase = 'back'; BatAudio.sfxBatarangHit(); break;
         }
       }
     }
@@ -1398,6 +1419,7 @@ function tryAttachGrapple(now) {
         player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
         const tang = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
         player.swingAngularVel = tang / sp.minR;
+        BatAudio.sfxGrapple();
         return;
       }
       continue;
@@ -1416,6 +1438,7 @@ function tryAttachGrapple(now) {
         player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
         const tang = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
         player.swingAngularVel = tang / d;
+        BatAudio.sfxGrapple();
         return;
       }
       continue;
@@ -1434,6 +1457,7 @@ function tryAttachGrapple(now) {
       player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
       const tangential = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
       player.swingAngularVel = tangential / dist;
+      BatAudio.sfxGrapple();
       return;
     }
   }
@@ -1494,6 +1518,7 @@ function updateSwing(dt, now) {
     player.swinging = false;
     player.swingAnchor = null;
     grappleCooldownUntil = now + GRAPPLE_COOLDOWN_MS;
+    BatAudio.sfxSwingRelease();
     if (releasedByJump) { player.vy -= 3; jumpBufferUntil = 0; }
     // A release can leave the feet a few px inside a rooftop (the swing
     // ignores tiles). Snap up onto the surface — otherwise the horizontal
@@ -1667,6 +1692,12 @@ function loadLevel(idx) {
   // remember the furthest level this player has reached, for "Continuar"
   if (playerName) saveProgress(playerName, idx);
   updateCaveButtonVisibility();
+  const spec = LEVEL_SPECS[idx];
+  const mtype = BatAudio.musicForLevel(
+    spec?.name, spec?.cave, spec?.chase,
+    spec?.bane, spec?.twoface, spec?.mrfreeze
+  );
+  if (mtype) BatAudio.startMusic(mtype);
 }
 
 function startGame() {
@@ -1706,6 +1737,10 @@ function startGame() {
   loadLevel(startLevelIndex || 0);
   state = 'playing';
   overlay.classList.add('hidden');
+  BatAudio.ensureReady();
+  const spec = LEVEL_SPECS[startLevelIndex || 0];
+  const mtype = BatAudio.musicForLevel(spec?.name, spec?.cave, spec?.chase, spec?.bane, spec?.twoface, spec?.mrfreeze);
+  if (mtype) BatAudio.startMusic(mtype);
 }
 
 
@@ -1906,6 +1941,8 @@ function showNameMenu() {
 }
 
 async function submitName() {
+  BatAudio.ensureReady();
+  BatAudio.sfxMenuSelect();
   const name = nameInput.value.trim();
   if (name.length < 2) { nameError.textContent = 'Ingresá un nombre (mínimo 2 letras).'; return; }
   playerName = name;
@@ -1957,6 +1994,8 @@ function showChoiceMenu(greet) {
   showMenuSection('choice');
   overlay.classList.remove('hidden');
   state = 'start';
+  BatAudio.ensureReady();
+  BatAudio.startMusic('menu');
 }
 
 btnNameOk.addEventListener('click', submitName);
@@ -1965,6 +2004,7 @@ btnChangeName.addEventListener('click', () => showMenuSection('name'));
 
 // New game: start from the top, showing the story intro first.
 btnNew.addEventListener('click', () => {
+  BatAudio.sfxMenuSelect();
   startLevelIndex = 0;
   showMenuSection('message'); // the intro instructions + JUGAR button
 });
@@ -1972,16 +2012,20 @@ btnNew.addEventListener('click', () => {
 // Continue: jump straight into the furthest level reached.
 btnContinue.addEventListener('click', () => {
   if (btnContinue.disabled) return;
+  BatAudio.sfxMenuSelect();
   startLevelIndex = Math.min(savedMaxLevel, LEVEL_SPECS.length - 1);
   startGame();
 });
 
 overlayBtn.addEventListener('click', () => {
+  BatAudio.ensureReady();
+  BatAudio.sfxMenuSelect();
   if (state === 'start') {
     // the story first: Dos Caras kidnapping Robin
     overlay.classList.add('hidden');
     state = 'cutscene';
     cutsceneStart = performance.now();
+    BatAudio.startMusic('cutscene');
     return;
   }
   if (state === 'gameover' || state === 'win') startGame();
@@ -2258,6 +2302,7 @@ function updateSnowCannons(dt, now) {
       player.frozenUntil = now + FREEZE_MS;
       player.vx *= 0.3;
       b.alive = false;
+      BatAudio.sfxFreeze();
       continue;
     }
     // Finally: bury the ball in a solid tile so it doesn't punch through
@@ -2299,12 +2344,15 @@ function killPlayer() {
   // before it ever reaches this function.
   lives--;
   hud.lives.textContent = Math.max(lives, 0);
+  BatAudio.sfxDeath();
   if (lives <= 0) {
     // Keep chase-mode (portrait canvas + chase-active body class) on
     // during game-over so the overlay menu stays in the same one-hand
     // portrait framing. exitChaseMode fires on the next loadLevel when
     // the player restarts.
     state = 'gameover';
+    BatAudio.sfxGameOver();
+    BatAudio.stopMusic();
     // record the game over for this player (shown on the Batcave computer)
     gameOverCount++;
     if (playerName) saveGameOvers(playerName, gameOverCount);
@@ -2391,9 +2439,11 @@ function damageVillain() {
   if (!v || !v.alive || Date.now() < v.hitUntil) return;
   v.hp--;
   v.hitUntil = Date.now() + 500;
+  BatAudio.sfxBossHit();
   if (v.hp <= 0) {
     v.alive = false;
     score += 5000;
+    BatAudio.sfxBossDefeat();
   } else {
     score += 200;
   }
@@ -2407,6 +2457,7 @@ function hurtPlayer() {
   if (player.powerState === 'big') {
     setPowerState('small');
     invulnUntil = Date.now() + INVULN_TIME;
+    BatAudio.sfxHurt();
     return;
   }
   // Boss fights (Two-Face / Bane): the fight is a self-contained
@@ -2419,8 +2470,11 @@ function hurtPlayer() {
   if (tfEngaged || baneEngaged) {
     lives--;
     hud.lives.textContent = Math.max(lives, 0);
+    BatAudio.sfxHurt();
     if (lives <= 0) {
       state = 'gameover';
+      BatAudio.sfxGameOver();
+      BatAudio.stopMusic();
       gameOverCount++;
       if (playerName) saveGameOvers(playerName, gameOverCount);
       showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
@@ -2486,12 +2540,14 @@ function completeLevel() {
   state = 'levelcomplete';
   stateTimer = 1400;
   score += Math.floor(timeLeft) * 5;
+  BatAudio.sfxLevelComplete();
   // collecting every coin in the level earns an extra life
   allCoinsBonus = level.coins.length > 0 && level.coins.every(c => c.taken);
   if (allCoinsBonus) {
     lives++;
     hud.lives.textContent = lives;
     stateTimer = 2200; // linger so the bonus line can be read
+    BatAudio.sfxAllCoins();
   }
 }
 
@@ -2650,6 +2706,7 @@ function updateBane(dt, now) {
     if (player.x > 6 * TILE) {
       bn.state = 'growing';
       bn.growStart = now;
+      BatAudio.startMusic('boss-bane');
     }
   } else if (bn.state === 'growing') {
     const t = Math.min(1, (now - bn.growStart) / BANE_GROW_MS);
@@ -2701,6 +2758,7 @@ function updateBane(dt, now) {
       level.waves.push({ x: bn.x + bn.w / 2, r: 26, hit: false });
       triggerScreenShake(now, 7, 260);
       spawnLandingImpact(now, bn.x + bn.w / 2, floorY);
+      BatAudio.sfxShockwave();
     }
   }
 
@@ -2730,11 +2788,13 @@ function updateBane(dt, now) {
       player.vy = STOMP_BOUNCE; // bounce off the blow, back toward a perch
       score += 400;
       hud.score.textContent = score;
+      BatAudio.sfxBossHit();
       if (bn.hp <= 0) {
         bn.alive = false;
         bn.deadAt = now;
         score += 5000;
         hud.score.textContent = score;
+        BatAudio.sfxBossDefeat();
         return;
       }
     }
@@ -2750,6 +2810,8 @@ function updateBane(dt, now) {
 // how many lives Batman still has.
 function robinKilled() {
   state = 'gameover';
+  BatAudio.sfxGameOver();
+  BatAudio.stopMusic();
   gameOverCount++;
   if (playerName) saveGameOvers(playerName, gameOverCount);
   showChoiceMenu(`ROBIN CAYÓ AL TANQUE — la misión falló. Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
@@ -2816,6 +2878,7 @@ function updateTwoFace(dt, now) {
       tf.state = 'patrol';
       tf.cutTimer = now + TWOFACE_ROPE_CUT_INTERVAL;
       tf.vx = -Math.abs(TWOFACE_PATROL_SPEED);
+      BatAudio.startMusic('boss-twoface');
     }
     return;
   }
@@ -2900,12 +2963,14 @@ function updateTwoFace(dt, now) {
     score += 400;
     hud.score.textContent = score;
     triggerScreenShake(now, 3, 180);
+    BatAudio.sfxBossHit();
     if (tf.hp <= 0) {
       tf.alive = false;
       tf.deadAt = now;
       score += 5000;
       hud.score.textContent = score;
       if (source === 'stomp') player.vy = STOMP_BOUNCE;
+      BatAudio.sfxBossDefeat();
       return;
     }
     // hit counter: hp goes 5→4→3→2→1. Coin flip on hits 1, 3, 4 (only
@@ -3058,15 +3123,18 @@ function hitFreezeButton(mf, i, now, viaDive) {
     mf.activeCount = mf.buttons.filter(x => x.active).length;
     score += 700; hud.score.textContent = score;
     triggerScreenShake(now, 5, 220);
+    BatAudio.sfxBossHit();
     if (mf.buttons.every(x => x.active)) {
       mf.state = 'overload'; mf.deadAt = now; mf.meltStart = now;
       score += 6000; hud.score.textContent = score;
       triggerScreenShake(now, 9, 700);
+      BatAudio.sfxBossDefeat();
     }
   } else {
     // Chip hit: shake + smaller score gain
     score += 250; hud.score.textContent = score;
     triggerScreenShake(now, 3, 140);
+    BatAudio.sfxBossHit();
   }
   return true;
 }
@@ -3082,7 +3150,7 @@ function updateMrFreeze(dt, now) {
 
   // wake up once Batman steps into the arena
   if (mf.state === 'idle') {
-    if (player.x > 4 * TILE) { mf.state = 'fight'; mf.nextShotAt = now + 900; }
+    if (player.x > 4 * TILE) { mf.state = 'fight'; mf.nextShotAt = now + 900; BatAudio.startMusic('boss-freeze'); }
     return;
   }
 
@@ -3377,6 +3445,7 @@ function updatePlaying(dt) {
       player.jumpsUsed = 1;
       jumpBufferUntil = 0;
       coyoteUntil = 0;
+      BatAudio.sfxJump();
     } else if (!frozenNow && !crouched && activeChar === 'robin' && now < jumpBufferUntil &&
                !player.onGround && (player.jumpsUsed || 0) < 2) {
       // Robin's aerial double jump — a little weaker than the first, plus a
@@ -3385,6 +3454,7 @@ function updatePlaying(dt) {
       player.jumpsUsed = 2;
       player.somersaultUntil = now + 400;
       jumpBufferUntil = 0;
+      BatAudio.sfxDoubleJump();
     }
     if (!keys.jump && player.vy < JUMP_VELOCITY * JUMP_CUT) {
       player.vy = JUMP_VELOCITY * JUMP_CUT;
@@ -3470,6 +3540,7 @@ function updatePlaying(dt) {
       score += 100;
       hud.coins.textContent = coinsCollected;
       hud.score.textContent = score;
+      BatAudio.sfxCoin();
     }
   }
 
@@ -3486,6 +3557,7 @@ function updatePlaying(dt) {
       // GENERAL RULE: every bat power-up is a checkpoint, in every
       // act. Respawn falls through to this spot on the next hit.
       level.checkpoint = { x: bat.x, y: bat.y };
+      BatAudio.sfxPowerUp();
     }
   }
 
@@ -3522,6 +3594,7 @@ function updatePlaying(dt) {
         player.vy = STOMP_BOUNCE;
         score += 100;
         hud.score.textContent = score;
+        BatAudio.sfxStomp();
       } else if (g.confused) {
         // Confused thug touched from the side: they're too disoriented
         // to land a hit. Batman passes through unharmed — the smoke's
@@ -3533,11 +3606,13 @@ function updatePlaying(dt) {
         player.vy = STOMP_BOUNCE;
         score += 50;
         hud.score.textContent = score;
+        BatAudio.sfxThaw();
       } else if (landing && !g.helmet) {
         g.alive = false;
         player.vy = STOMP_BOUNCE;
         score += 100;
         hud.score.textContent = score;
+        BatAudio.sfxStomp();
       } else {
         hurtPlayer();
         return;
@@ -3564,17 +3639,20 @@ function updatePlaying(dt) {
           player.vy = STOMP_BOUNCE;
           score += 150;
           hud.score.textContent = score;
+          BatAudio.sfxStomp();
         } else if (b.frozen) {
           b.frozen = false;
           b.vx = (b.vx < 0 ? -1 : 1) * 1.7;
           player.vy = STOMP_BOUNCE;
           score += 75;
           hud.score.textContent = score;
+          BatAudio.sfxThaw();
         } else {
           b.alive = false;
           player.vy = STOMP_BOUNCE;
           score += 150;
           hud.score.textContent = score;
+          BatAudio.sfxStomp();
         }
       } else if (b.confused) {
         // Confused bird: harmless mid-air contact (same rule as thugs).
@@ -3601,6 +3679,7 @@ function updatePlaying(dt) {
         player.vy = STOMP_BOUNCE;
         score += 120;
         hud.score.textContent = score;
+        BatAudio.sfxStomp();
       } else {
         hurtPlayer();
         return;

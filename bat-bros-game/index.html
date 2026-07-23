@@ -32,6 +32,10 @@
       <div class="hud-item">TIEMPO <span id="hud-time">500</span></div>
       <div class="hud-item" id="hud-ammo-wrap" style="display:none">🪃 <span id="hud-ammo">5</span></div>
       <div class="hud-item" id="hud-smoke-wrap" style="display:none">💨 <span id="hud-smoke">5</span></div>
+      <div class="hud-audio">
+        <button id="btn-mute" class="audio-btn" title="Silenciar todo">🔊</button>
+        <button id="btn-music" class="audio-btn" title="Silenciar música">🎵</button>
+      </div>
     </div>
 
     <!-- Act 3+ shortcut: warp back to the Batcave any time -->
@@ -115,6 +119,7 @@
 
 <script src="catalog.js"></script>
 <script src="levels.js"></script>
+<script src="audio.js"></script>
 <script src="game.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
